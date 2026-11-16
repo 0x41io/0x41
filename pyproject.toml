@@ -1,0 +1,41 @@
+# How Python installs 0x41 (pip install -e .). The code is the x41/ folder
+# (a Python package name can't start with a digit); the command is `0x41`.
+
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "0x41"
+description = "0x41: one command for the suite. monomi finds, akashi proves, kaidoku explains"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "0x41" }]
+# Monomi needs 3.14, so the suite does too
+requires-python = ">=3.14"
+dynamic = ["version"]
+# Exact release tags that are tested together. Not loose version ranges: these
+# tools aren't on PyPI, and a bare name could pull a stranger's package of the
+# same name. Akashi pins the same Monomi tag, so pip sees one Monomi.
+dependencies = [
+    "monomi @ git+https://github.com/0x41io/monomi@v1.16.0",
+    "akashi @ git+https://github.com/0x41io/akashi@v0.2.1",
+    "kaidoku @ git+https://github.com/0x41io/kaidoku@v0.8.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/0x41io/0x41"
+
+[project.scripts]
+0x41 = "x41.cli:main"
+
+[tool.setuptools.dynamic]
+version = { attr = "x41.__version__" }
+
+[tool.setuptools.packages.find]
+include = ["x41", "x41.*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

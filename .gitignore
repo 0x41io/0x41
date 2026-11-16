@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+
+# Virtual environments
+venv/
+.venv/
+
+# Runs: scans, verdicts and reports about real targets stay on your machine
+runs/
+
+# Bug bounty scope files (which programs you hunt stays private)
+*-scope.txt
+scope.txt
+
+# Secrets
+.env
+.env.*
