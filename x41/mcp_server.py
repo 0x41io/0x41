@@ -310,4 +310,9 @@ def main(argv=None) -> None:
     # stderr, never stdout: stdout carries the MCP messages
     print(f"0x41 MCP server {__version__}: passive, active proofs only after a terminal approval, "
           "no AI briefings", file=sys.stderr)
+    # API keys from ~/.config/0x41/keys.env into this process's environment, so
+    # every vet it starts (and explain_cves) gets them. Names only, never values.
+    from x41 import keys
+    for line in keys.load():
+        print(f"0x41 MCP server: {line}", file=sys.stderr)
     mcp.run()

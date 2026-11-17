@@ -107,6 +107,14 @@ What it never does:
 
 One vet runs at a time. A vet keeps going if the Claude app closes, and `vet_status` picks it up later. Setup copies `X41_HOME`, `MONOMI_HOME`, `AKASHI_HOME` and `KAIDOKU_HOME` (if set) into the entry, because the Claude app doesn't read your shell's startup files; API keys are never written there.
 
+**API keys for vets started from Claude.** For the same reason, keys in your `~/.bashrc` don't reach them (mønømi's OTX source then falls back to its saved copy). Save them once:
+
+```bash
+0x41 mcp keys        # copies OTX_API_KEY / NVD_API_KEY from this terminal (shows names, never values; asks first)
+```
+
+That writes `~/.config/0x41/keys.env`, readable only by you (permissions 600). The server loads it at startup and every vet it starts inherits the keys. Only `OTX_API_KEY` and `NVD_API_KEY` are loaded (nothing over MCP uses AI briefings, so `ANTHROPIC_API_KEY` stays out); a file others can read, or a link, is refused; values are never printed or logged; a key already set in the environment wins. Restart the Claude app after changing it.
+
 ## Guardrails
 
 - Passive by default: mønømi's passive checks and akashi's DNS/registry proofs.
