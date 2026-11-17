@@ -204,3 +204,21 @@ def test_report_neutralizes_text_from_the_target():
     text = report.markdown({"target": "example.test", "leads": [hostile], "versions": {}})
     assert "<script>" not in text and "\x1b" not in text
     assert "&lt;script>" in text and "\\|" in text and "`rm -rf`" not in text
+
+
+@pytest.mark.parametrize("bad", ["", "   ", "example.test--hosts", "../../etc", "bad_domain"])
+def test_a_bad_domain_is_refused_before_anything_runs(tmp_path, capsys, bad):
+    fake = Fake()
+    code = vet_mod.vet(bad, tools=fake.tools(), out_root=str(tmp_path))
+    assert code == 2
+    assert fake.calls == []                 # monomi never started, nothing proven
+    assert list(tmp_path.iterdir()) == []   # and no empty run folder was made
+    assert "nothing ran" in capsys.readouterr().err
+
+
+def test_the_domain_is_cleaned_the_way_monomi_cleans_it(tmp_path):
+    fake = Fake()
+    vet_mod.vet("https://www.Example.TEST/login", tools=fake.tools(), out_root=str(tmp_path),
+                now=datetime(2026, 11, 16, 1, 0, 0))
+    assert fake.calls[0] == ("scan", "example.test", None)  # monomi gets the clean name
+    assert (tmp_path / "example.test" / "2026-11-16_010000" / "report.md").exists()  # folder matches it

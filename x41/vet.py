@@ -71,6 +71,17 @@ def default_tools() -> Tools:
     )
 
 
+def clean_target(domain: str) -> str:
+    """The domain as mønømi will scan it, using mønømi's own rule
+    (monomi.cli.clean_domain): 'https://www.Example.com/x' -> 'example.com'.
+
+    Raises ValueError for anything that isn't a domain (empty, a typo like
+    'example.com--hosts', a path), so 0x41 refuses exactly what mønømi would,
+    before anything runs. One rule, kept in one place."""
+    from monomi.cli import clean_domain
+    return clean_domain(domain)
+
+
 def slug(domain: str) -> str:
     """A safe folder name for the domain (it comes from the command line).
 
@@ -103,6 +114,11 @@ def write_verdicts(path: str, target: str, verdicts: list) -> None:
 def vet(domain: str, *, scope: str | None = None, ai: bool = False, active: bool = True,
         cves: bool = True, hosts_file: str | None = None, tools: Tools | None = None,
         out_root: str | None = None, now: datetime | None = None) -> int:
+    try:
+        domain = clean_target(domain)
+    except ValueError as e:
+        print(f"0x41: {e}; nothing ran.", file=sys.stderr)
+        return 2
     tools = tools or default_tools()
     now = now or datetime.now()
     run_dir = os.path.join(out_root or home.data_dir("runs"), slug(domain), now.strftime("%Y-%m-%d_%H%M%S"))
