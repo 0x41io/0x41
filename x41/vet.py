@@ -193,6 +193,13 @@ def vet(domain: str, *, scope: str | None = None, ai: bool = False, active: bool
             rec["not_proven"] += [{"id": s["id"], "rule": s["rule"], "reason": "skipped: not approved"}
                                   for s in ready]
 
+    # Active proofs that didn't run keep what they would have sent, so the
+    # MCP server can show it (the report lists them by reason).
+    would_send = {s["id"]: s.get("requests") or [] for s in act}
+    for n in rec["not_proven"]:
+        if n["id"] in would_send:
+            n["active"], n["would_send"] = True, would_send[n["id"]]
+
     # 4. kaidoku: explain every finding, and the CVEs mønømi saw
     step(4, "kaidoku", "explaining" + (" (AI briefings)" if ai else ""))
     if rec["verdicts"]:

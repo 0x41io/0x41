@@ -4,6 +4,7 @@ The 0x41 command line.
     0x41 vet example.com                        scan, prove (passive), explain
     0x41 vet example.com --scope scope.txt      ...and active proofs, after a typed yes
     0x41 vet example.com --ai                   ...with AI briefings (kaidoku)
+    0x41 mcp                                    the MCP server, for AI agents (passive only)
 """
 
 import argparse
@@ -27,11 +28,17 @@ def build_parser() -> argparse.ArgumentParser:
     # Hidden: the MCP server picks the run folder up front so it can follow the job.
     # vet() still refuses any folder outside runs/.
     r.add_argument("--run-dir", help=argparse.SUPPRESS)
+    sub.add_parser("mcp", help="run the MCP server for AI agents (passive only; talks over stdin/stdout)")
     return p
 
 
 def main(argv=None) -> int:
     args = build_parser().parse_args(argv)
+    if args.command == "mcp":
+        # nothing may reach stdout before the server starts: it's the MCP channel
+        from x41 import mcp_server
+        mcp_server.main([])
+        return 0
     print(f"[0x41] {__version__} · mønømi finds · akashi proves · kaidoku explains")
     if args.command == "vet":
         try:
