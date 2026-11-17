@@ -6,4 +6,4 @@ proofs (only inside scope, after a typed yes), and a report that explains
 every finding.
 """
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"

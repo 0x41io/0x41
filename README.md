@@ -62,6 +62,31 @@ The scope file uses mønømi's format (in/out lines, as on a bug bounty program'
 
 **Where runs go:** `runs/<domain>/<time>/` in the clone (`scan.json`, `verdicts.jsonl`, `run.json`, `report.md`). A plain install uses `~/.0x41`; `X41_HOME` overrides both. Every verdict also goes into akashi's proof history, so `akashi recheck` works after you fix something.
 
+## Use it from Claude (MCP)
+
+`0x41 mcp` is an MCP server, so an AI agent like Claude can run the whole chain: mønømi finds, akashi proves, kaidoku explains. (mønømi's own MCP server stays the place for its separate checks.)
+
+```bash
+0x41 mcp setup        # adds "0x41" to the Claude desktop app's config (shows the change, asks first)
+```
+
+Then fully quit and reopen the Claude app. The tools:
+
+| Tool | What it does |
+|---|---|
+| `vet_start(domain, hosts_file?)` | starts a passive vet in the background and returns a job id at once (a vet takes 1-3 minutes) |
+| `vet_status(job_id, detail?)` | running, failed (with the end of its log), or done: the tally, each finding with akashi's verdict, proof, fix and owner, what wasn't proven and why, active proofs waiting, the CVEs mønømi saw. `detail="full"` adds the whole report |
+| `list_vets(domain?)` | earlier vets, newest first, including ones run from the terminal |
+| `explain_cves(ids)` | kaidoku's CVE lookup: NVD, EPSS, CISA KEV and a verdict, up to 5 per call |
+
+What it never does:
+
+- **Active proofs.** No tool takes a scope file, and every vet runs with `--no-active`. Active proofs need a typed `yes` at a real terminal, so `vet_status` shows what they would send and the command to run them yourself.
+- **AI briefings.** In a chat, Claude is already the explainer, so kaidoku runs without them here (nothing is billed to your Anthropic API key).
+- **Read other files.** Job ids only reach folders inside `runs/`, and `hosts_file` must be a `.txt` inside mønømi's scans folder.
+
+One vet runs at a time. A vet keeps going if the Claude app closes, and `vet_status` picks it up later. Setup copies `X41_HOME`, `MONOMI_HOME`, `AKASHI_HOME` and `KAIDOKU_HOME` (if set) into the entry, because the Claude app doesn't read your shell's startup files; API keys are never written there.
+
 ## Guardrails
 
 - Passive by default: mønømi's passive checks and akashi's DNS/registry proofs.
@@ -69,6 +94,7 @@ The scope file uses mønømi's format (in/out lines, as on a bug bounty program'
 - Every active request is shown before it's sent, and nothing active runs without a typed `yes` at a real terminal. There is no flag that skips the question.
 - Text from the target (hostnames, headlines, evidence) is made harmless before it goes into the report.
 - The run folder name comes from the domain with only safe characters, so a domain can't choose where files are written.
+- Over MCP: passive only, no tool can take a scope file, and text from the target is marked as data, never instructions.
 
 ## Development
 
