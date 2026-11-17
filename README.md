@@ -78,10 +78,30 @@ Then fully quit and reopen the Claude app. The tools:
 | `vet_status(job_id, detail?)` | running, failed (with the end of its log), or done: the tally, each finding with akashi's verdict, proof, fix and owner, what wasn't proven and why, active proofs waiting, the CVEs mønømi saw. `detail="full"` adds the whole report |
 | `list_vets(domain?)` | earlier vets, newest first, including ones run from the terminal |
 | `explain_cves(ids)` | kaidoku's CVE lookup: NVD, EPSS, CISA KEV and a verdict, up to 5 per call |
+| `prove_request(job_id, lead_ids?)` | asks you to approve a vet's waiting active proofs; sends nothing, returns an approval id |
+| `prove_run(rid)` | **ACTIVE**: runs what you approved, once |
+
+### Active proofs from Claude: you approve them in your terminal
+
+Active proofs (they send requests to the target's own servers) never run on Claude's say-so. The flow:
+
+1. Claude calls `prove_request` and gives you an approval id. Nothing is sent.
+2. **You** run, in your own terminal:
+   ```bash
+   0x41 approve k7m2-x9pq --scope scope.txt
+   ```
+   It shows every lead and every exact request it would send (and anything blocked or out of scope), then waits for you to type `yes`. It refuses if stdin isn't a real terminal.
+3. Claude calls `prove_run` with the id. It runs only what you were shown.
+
+An approval covers one vet, the leads listed, the exact requests shown, and the scope file (and research header file) **as they were when you approved** (sha256). It's good for **one run, within 15 minutes**; an unanswered request expires after an hour. If anything differs (the scope file was edited, akashi's plan changed, it was already used, it expired), `prove_run` refuses and nothing is sent. Every event, refusals included, is kept in `runs/<domain>/<time>/approvals/<id>.json`, and every request akashi sends is in its `scans/active.log` with `"via": "mcp"` and the approval id.
+
+**The limit:** this stops an agent that only has MCP tools. An agent that can also run shell commands on your machine could fake a terminal, the same limit as mønømi's `--allow-active`: anything that can run commands as you can approve as you. Don't leave an agent with both unattended.
+
+Why not a confirmation popup in the Claude app (MCP "elicitation")? It was tested on 2026-11-16 and the app doesn't support it (it answers `Method not found`), and other clients have been reported to accept such prompts without showing them. A terminal yes can't be faked by the model.
 
 What it never does:
 
-- **Active proofs.** No tool takes a scope file, and every vet runs with `--no-active`. Active proofs need a typed `yes` at a real terminal, so `vet_status` shows what they would send and the command to run them yourself.
+- **Active proofs without you.** No tool takes a scope file, a research file or a yes, and every vet runs with `--no-active`. Active proofs run only through `prove_run`, after your typed `yes` in a terminal.
 - **AI briefings.** In a chat, Claude is already the explainer, so kaidoku runs without them here (nothing is billed to your Anthropic API key).
 - **Read other files.** Job ids only reach folders inside `runs/`, and `hosts_file` must be a `.txt` inside mønømi's scans folder.
 
@@ -94,7 +114,7 @@ One vet runs at a time. A vet keeps going if the Claude app closes, and `vet_sta
 - Every active request is shown before it's sent, and nothing active runs without a typed `yes` at a real terminal. There is no flag that skips the question.
 - Text from the target (hostnames, headlines, evidence) is made harmless before it goes into the report.
 - The run folder name comes from the domain with only safe characters, so a domain can't choose where files are written.
-- Over MCP: passive only, no tool can take a scope file, and text from the target is marked as data, never instructions.
+- Over MCP: active proofs only after your typed `yes` in a terminal (`0x41 approve`), once, for exactly what you were shown; no tool can take a scope file; text from the target is marked as data, never instructions.
 
 ## Development
 
