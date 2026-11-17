@@ -6,6 +6,7 @@ The 0x41 command line.
     0x41 vet example.com --ai                   ...with AI briefings (kaidoku)
     0x41 mcp                                    the MCP server, for AI agents (passive only)
     0x41 mcp setup                              add it to the Claude desktop app's config
+    0x41 approve RID --scope scope.txt          approve active proofs Claude asked for (typed yes)
 """
 
 import argparse
@@ -29,6 +30,11 @@ def build_parser() -> argparse.ArgumentParser:
     # Hidden: the MCP server picks the run folder up front so it can follow the job.
     # vet() still refuses any folder outside runs/.
     r.add_argument("--run-dir", help=argparse.SUPPRESS)
+    a = sub.add_parser("approve", help="approve active proofs an agent asked for (shows every request, typed yes)")
+    a.add_argument("rid", help="the approval id the agent gave you, e.g. k7m2-x9pq")
+    a.add_argument("--scope", metavar="FILE", required=True,
+                   help="scope file (mønømi's format): only hosts it allows are touched")
+    a.add_argument("--research", metavar="FILE", help="research header file (sent on active requests)")
     m = sub.add_parser("mcp", help="run the MCP server for AI agents (passive only; talks over stdin/stdout)")
     m.add_argument("action", nargs="?", choices=["setup"],
                    help="setup: add the server to the Claude desktop app's config")
@@ -49,6 +55,16 @@ def main(argv=None) -> int:
         mcp_server.main([])
         return 0
     print(f"[0x41] {__version__} · mønømi finds · akashi proves · kaidoku explains")
+    if args.command == "approve":
+        from x41 import approvals
+        try:
+            return approvals.approve(args.rid, args.scope, args.research)
+        except approvals.ApprovalError as e:
+            print(f"0x41: {e}", file=sys.stderr)
+            return 2
+        except (KeyboardInterrupt, EOFError):
+            print("\n0x41: not approved. Nothing will run.", file=sys.stderr)
+            return 130
     if args.command == "vet":
         try:
             return vet_mod.vet(args.domain, scope=args.scope, ai=args.ai, active=not args.no_active,
