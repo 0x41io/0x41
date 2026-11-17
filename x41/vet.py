@@ -93,6 +93,13 @@ def slug(domain: str) -> str:
     return d or "domain"
 
 
+def inside(path: str, root: str) -> bool:
+    """True if path is a folder strictly inside root, after following links
+    and '..' (so 'runs/../../etc' or a link out of runs/ doesn't count)."""
+    base = os.path.realpath(root)
+    return os.path.realpath(path).startswith(base + os.sep)
+
+
 def step(n: int, tool: str, what: str) -> None:
     print(f"\n[{n}/4] {tool.ljust(8)} {what}")
 
@@ -113,15 +120,19 @@ def write_verdicts(path: str, target: str, verdicts: list) -> None:
 
 def vet(domain: str, *, scope: str | None = None, ai: bool = False, active: bool = True,
         cves: bool = True, hosts_file: str | None = None, tools: Tools | None = None,
-        out_root: str | None = None, now: datetime | None = None) -> int:
+        out_root: str | None = None, now: datetime | None = None, run_dir: str | None = None) -> int:
     try:
         domain = clean_target(domain)
     except ValueError as e:
         print(f"0x41: {e}; nothing ran.", file=sys.stderr)
         return 2
+    root = out_root or home.data_dir("runs")
+    if run_dir is not None and not inside(run_dir, root):
+        print(f"0x41: --run-dir must be a folder inside {root}; nothing ran.", file=sys.stderr)
+        return 2
     tools = tools or default_tools()
     now = now or datetime.now()
-    run_dir = os.path.join(out_root or home.data_dir("runs"), slug(domain), now.strftime("%Y-%m-%d_%H%M%S"))
+    run_dir = run_dir or os.path.join(root, slug(domain), now.strftime("%Y-%m-%d_%H%M%S"))
     os.makedirs(run_dir, exist_ok=True)
     scan_path = os.path.join(run_dir, "scan.json")
     rec = {"domain": domain, "started": now.isoformat(timespec="seconds"), "run_dir": run_dir,

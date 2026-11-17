@@ -24,6 +24,9 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--no-active", action="store_true", help="never run active proofs, even with --scope")
     r.add_argument("--no-cves", action="store_true", help="skip explaining the CVEs monomi saw")
     r.add_argument("--hosts", metavar="FILE", help="also check hostnames you already know (passed to monomi)")
+    # Hidden: the MCP server picks the run folder up front so it can follow the job.
+    # vet() still refuses any folder outside runs/.
+    r.add_argument("--run-dir", help=argparse.SUPPRESS)
     return p
 
 
@@ -33,7 +36,7 @@ def main(argv=None) -> int:
     if args.command == "vet":
         try:
             return vet_mod.vet(args.domain, scope=args.scope, ai=args.ai, active=not args.no_active,
-                               cves=not args.no_cves, hosts_file=args.hosts)
+                               cves=not args.no_cves, hosts_file=args.hosts, run_dir=args.run_dir)
         except KeyboardInterrupt:
             print("\n0x41: stopped. Anything already proven is in akashi's proof history.", file=sys.stderr)
             return 130
