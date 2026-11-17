@@ -163,9 +163,22 @@ def test_waiting_active_proofs_say_what_and_how_but_cant_run_here(homes):
     finished_vet(homes)
     out = call("vet_status", {"job_id": JOB})
     assert out["active_proofs_waiting"] == [
-        {"id": "L2", "rule": "around_cdn", "would_send": ["GET https://www.example.test/ (through the CDN)"]}]
+        {"id": "L2", "rule": "around_cdn", "reason": "no scope file given",
+         "would_send": ["GET https://www.example.test/ (through the CDN)"]}]
     how = out["to_run_active_proofs"]
     assert "0x41 vet example.test --scope scope.txt" in how and "typed yes" in how and "can't run from here" in how
+
+
+def test_without_a_scope_it_says_why_there_is_no_request_list(homes):
+    """Found in the live check: akashi lists requests only once a scope file
+    allows the hosts, so an empty list must not look like "sends nothing"."""
+    rec = {**RECORD, "not_proven": [{"id": "L2", "rule": "around_cdn", "active": True, "would_send": [],
+                                     "reason": "no scope file loaded (active checks need one)"}]}
+    finished_vet(homes, rec)
+    waiting = call("vet_status", {"job_id": JOB})["active_proofs_waiting"][0]
+    assert "would_send" not in waiting
+    assert "once a scope file allows the hosts" in waiting["requests"]
+    assert waiting["reason"] == "no scope file loaded (active checks need one)"
 
 
 def test_no_waiting_section_when_nothing_is_waiting(homes):

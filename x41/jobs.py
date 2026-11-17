@@ -37,6 +37,7 @@ JOB_FILE = "job.json"
 LOG_FILE = "vet.log"
 TAIL_LINES = 15
 _ANSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
+_ART = re.compile(r"[\s░▒▓█]+")  # a line of only block characters: mønømi's banner
 _JOB_ID = re.compile(r"[a-z0-9._-]+/\d{4}-\d{2}-\d{2}_\d{6}")
 
 # Processes this server started, by pid. Polling them reaps them when they
@@ -108,7 +109,12 @@ def _tail(run_dir: str, lines: int = TAIL_LINES) -> list:
             text = f.read().decode("utf-8", "replace")
     except OSError:
         return []
-    return [_ANSI.sub("", ln).rstrip() for ln in text.splitlines() if ln.strip()][-lines:]
+    kept = []
+    for ln in text.splitlines():
+        ln = _ANSI.sub("", ln).rstrip()
+        if ln.strip() and not _ART.fullmatch(ln):  # skip blank lines and banner art
+            kept.append(ln)
+    return kept[-lines:]
 
 
 def _job_dirs(root: str | None = None):

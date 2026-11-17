@@ -111,6 +111,20 @@ def _cve_row(r: dict) -> dict:
             "kev": bool(c.get("kev")), "found_on": [loc.get("ip") for loc in r.get("found_on") or []]}
 
 
+def _waiting(n: dict) -> dict:
+    """An active proof that didn't run. akashi lists its exact requests only
+    once a scope file allows the hosts (which name reaches the origin depends
+    on the scope), so without one there's no list: say so instead of showing
+    an empty one, which would read as "sends nothing"."""
+    out = {"id": n.get("id"), "rule": n.get("rule"), "reason": n.get("reason")}
+    if n.get("would_send"):
+        out["would_send"] = n["would_send"]
+    else:
+        out["requests"] = ("listed by akashi once a scope file allows the hosts; the terminal "
+                           "command shows every request before asking for a yes")
+    return out
+
+
 def vet_summary(st: dict) -> dict:
     """A finished vet, summary first: the tally, every finding with its proof,
     fix and owner, and everything not proven (with the reason), so nothing is
@@ -134,8 +148,7 @@ def vet_summary(st: dict) -> dict:
     if len(leads) > LIST_CAP:
         out["findings_more"] = len(leads) - LIST_CAP
     if waiting:
-        out["active_proofs_waiting"] = [{"id": n.get("id"), "rule": n.get("rule"),
-                                         "would_send": n.get("would_send") or []} for n in waiting]
+        out["active_proofs_waiting"] = [_waiting(n) for n in waiting]
         out["to_run_active_proofs"] = (
             f"In a terminal: 0x41 vet {st['domain']} --scope scope.txt  (only hosts the scope file "
             "allows; every request is shown first and nothing runs without a typed yes). "

@@ -74,6 +74,15 @@ def test_a_failed_job_says_why(tmp_path):
     assert "monomi did not finish" in out["log_tail"][-1]
 
 
+def test_the_log_tail_skips_banner_art(tmp_path):
+    """Found in the live check: mønømi's banner filled half the tail."""
+    d = tmp_path / JOB
+    d.mkdir(parents=True)
+    (d / "vet.log").write_text("[*] Target: example.test\n▒▓██████▓▒   ▒▓█▓▒\n  ▒▓█▓▒  ▒▓█▓▒  \n"
+                               "\x1b[1m[+] done\x1b[0m\n                by Øx41 · v1.16.0\n")
+    assert jobs._tail(str(d)) == ["[*] Target: example.test", "[+] done", "                by Øx41 · v1.16.0"]
+
+
 def test_running_shows_time_and_log(tmp_path):
     jobs.start("example.test", root=str(tmp_path), now=NOW, command=WAITS)
     out = jobs.status(JOB, root=str(tmp_path), now=datetime(2026, 11, 16, 18, 1, 30))
