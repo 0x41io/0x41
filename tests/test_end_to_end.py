@@ -12,7 +12,7 @@ from monomi import cli as monomi_cli
 from monomi import emailauth, evidence
 from monomi.paths import build_paths
 
-from x41 import run as run_mod
+from x41 import vet as vet_mod
 
 T = "2026-11-08T12:00:00+00:00"
 PAGE = "<title>Origins test site</title>hello"
@@ -70,7 +70,7 @@ def stubbed_network(monkeypatch, tmp_path):
 
 
 def real_tools(answer):
-    tools = run_mod.default_tools()
+    tools = vet_mod.default_tools()
     tools.scan = lambda domain, path, hosts: (write_scan(path), 0)[1]
     tools.ask = lambda prompt: answer
     tools.interactive = lambda: True
@@ -80,11 +80,11 @@ def real_tools(answer):
 def test_the_whole_chain(tmp_path, stubbed_network):
     scope = tmp_path / "scope.txt"
     scope.write_text("origins.test\n*.origins.test\n", encoding="utf-8")
-    code = run_mod.run("origins.test", scope=str(scope), tools=real_tools("yes"),
+    code = vet_mod.vet("origins.test", scope=str(scope), tools=real_tools("yes"),
                        out_root=str(tmp_path / "runs"), now=datetime(2026, 11, 16, 2, 0, 0))
     assert code == 0 and len(stubbed_network) == 2              # the two around-the-CDN requests
     text = (tmp_path / "runs" / "origins.test" / "2026-11-16_020000" / "report.md").read_text()
-    assert "# 0x41 run: origins.test" in text
+    assert "# 0x41 vet: origins.test" in text
     assert "Email spoofing: **CONFIRMED**" in text
     assert "Origin reachable around the CDN: **CONFIRMED**" in text
     assert "no SPF and no DKIM" in text                          # akashi v0.1.3's tailored fix
@@ -94,7 +94,7 @@ def test_the_whole_chain(tmp_path, stubbed_network):
 def test_the_whole_chain_without_a_yes_sends_nothing(tmp_path, stubbed_network):
     scope = tmp_path / "scope.txt"
     scope.write_text("origins.test\n*.origins.test\n", encoding="utf-8")
-    run_mod.run("origins.test", scope=str(scope), tools=real_tools("no"),
+    vet_mod.vet("origins.test", scope=str(scope), tools=real_tools("no"),
                 out_root=str(tmp_path / "runs"), now=datetime(2026, 11, 16, 2, 0, 0))
     assert stubbed_network == []                                 # nothing sent to the origin
     text = (tmp_path / "runs" / "origins.test" / "2026-11-16_020000" / "report.md").read_text()

@@ -3,7 +3,7 @@
 **One command for the 0x41 suite: [mønømi](https://github.com/0x41io/monomi) finds · [akashi](https://github.com/0x41io/akashi) proves · [kaidoku](https://github.com/0x41io/kaidoku) explains.**
 
 ```bash
-0x41 run example.com --scope scope.txt
+0x41 vet example.com --scope scope.txt
 ```
 
 ```
@@ -24,7 +24,7 @@ Report: runs/example.com/2026-11-16_183000/report.md
         2 confirmed · 0 unclear
 ```
 
-## What a run does
+## What `0x41 vet` does
 
 1. **mønømi scans** the domain with its passive checks only: certificate logs, DNS, email records, and Shodan's existing port/CVE data. Nothing is sent to the target.
 2. **akashi proves the passive leads** (takeovers, email spoofing) with fresh DNS and registry lookups. These run automatically: they never contact the target.
@@ -50,12 +50,12 @@ pip install -e .
 ## Use
 
 ```bash
-0x41 run example.com                          # scan, passive proofs, explain
-0x41 run example.com --scope scope.txt        # plus active proofs, after your yes
-0x41 run example.com --scope scope.txt --ai   # plus AI briefings (needs ANTHROPIC_API_KEY)
-0x41 run example.com --no-active              # never run active proofs
-0x41 run example.com --no-cves                # skip the CVE lookups
-0x41 run example.com --hosts lab-hosts.txt    # also check hostnames you already know
+0x41 vet example.com                          # scan, passive proofs, explain
+0x41 vet example.com --scope scope.txt        # plus active proofs, after your yes
+0x41 vet example.com --scope scope.txt --ai   # plus AI briefings (needs ANTHROPIC_API_KEY)
+0x41 vet example.com --no-active              # never run active proofs
+0x41 vet example.com --no-cves                # skip the CVE lookups
+0x41 vet example.com --hosts lab-hosts.txt    # also check hostnames you already know
 ```
 
 The scope file uses mønømi's format (in/out lines, as on a bug bounty program's page). Without the NVD API key, CVE lookups are spaced out (~5 a minute); `NVD_API_KEY` makes them faster.

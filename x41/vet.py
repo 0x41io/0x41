@@ -1,5 +1,5 @@
 """
-`0x41 run DOMAIN`: the whole suite in one command.
+`0x41 vet DOMAIN`: the whole suite in one command.
 
     [1/4] mønømi   a passive scan (its own command, live output)
     [2/4] akashi   passive proofs: DNS / registry only, run automatically
@@ -33,7 +33,7 @@ MONOMI_FLAGS = ["--email", "--takeover", "--ports"]
 
 @dataclass
 class Tools:
-    """Everything a run calls out to. default_tools() wires in the real ones."""
+    """Everything a vet calls out to. default_tools() wires in the real ones."""
     scan: Callable            # (domain, scan_path, hosts_file) -> exit code
     plan: Callable            # akashi.api.plan
     prove_passive: Callable   # akashi.api.prove_passive
@@ -93,14 +93,14 @@ def show_verdicts(verdicts: list) -> None:
 
 
 def write_verdicts(path: str, target: str, verdicts: list) -> None:
-    """This run's verdicts, in akashi's own history format, so kaidoku reads
-    them exactly like a proof history (one file for this run only)."""
+    """This vet's verdicts, in akashi's own history format, so kaidoku reads
+    them exactly like a proof history (one file for this vet only)."""
     with open(path, "w", encoding="utf-8") as f:
         for v in verdicts:
             f.write(json.dumps({"target": target, **v}) + "\n")
 
 
-def run(domain: str, *, scope: str | None = None, ai: bool = False, active: bool = True,
+def vet(domain: str, *, scope: str | None = None, ai: bool = False, active: bool = True,
         cves: bool = True, hosts_file: str | None = None, tools: Tools | None = None,
         out_root: str | None = None, now: datetime | None = None) -> int:
     tools = tools or default_tools()

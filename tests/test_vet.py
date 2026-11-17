@@ -1,5 +1,5 @@
 """
-`0x41 run` with fake tools: what runs, what never runs, and what the report
+`0x41 vet` with fake tools: what runs, what never runs, and what the report
 says. The safety rules are tested here directly: without a scope file, with
 --no-active, without a terminal, or without a typed yes, nothing active runs.
 """
@@ -10,7 +10,7 @@ from datetime import datetime
 
 import pytest
 
-from x41 import report, run as run_mod
+from x41 import report, vet as vet_mod
 
 T = "2026-11-16T01:00:00+00:00"
 
@@ -32,7 +32,7 @@ class Fake:
         self.scan_code, self.cve_ids = scan_code, list(cve_ids)
 
     def tools(self):
-        return run_mod.Tools(
+        return vet_mod.Tools(
             scan=self.scan, plan=self.plan, prove_passive=self.prove_passive,
             prove_active=self.prove_active, explain_history=self.explain_history,
             lookup_cves=self.lookup_cves, cves_in_scan=self.cves_in_scan,
@@ -88,13 +88,13 @@ class Fake:
 
 
 def go(tmp_path, fake, **kw):
-    code = run_mod.run("example.test", tools=fake.tools(), out_root=str(tmp_path),
+    code = vet_mod.vet("example.test", tools=fake.tools(), out_root=str(tmp_path),
                        now=datetime(2026, 11, 16, 1, 0, 0), **kw)
     run_dir = tmp_path / "example.test" / "2026-11-16_010000"
     return code, run_dir
 
 
-def test_full_run_with_scope_and_a_yes(tmp_path, capsys):
+def test_full_vet_with_scope_and_a_yes(tmp_path, capsys):
     fake = Fake()
     code, run_dir = go(tmp_path, fake, scope="scope.txt", ai=True)
     assert code == 0
@@ -180,8 +180,8 @@ def test_monomi_runs_with_passive_flags_only(monkeypatch):
     def fake_run(cmd):
         seen["cmd"] = cmd
         return Done()
-    monkeypatch.setattr(run_mod.subprocess, "run", fake_run)
-    run_mod.run_monomi("example.test", "/tmp/s.json", "hosts.txt")
+    monkeypatch.setattr(vet_mod.subprocess, "run", fake_run)
+    vet_mod.run_monomi("example.test", "/tmp/s.json", "hosts.txt")
     cmd = seen["cmd"]
     assert cmd[1:4] == ["-m", "monomi", "example.test"]
     assert set(cmd) >= {"--email", "--takeover", "--ports", "--json", "--hosts"}
@@ -193,8 +193,8 @@ def test_monomi_runs_with_passive_flags_only(monkeypatch):
     ("../../etc", "domain"), ("..", "domain"), (".hidden.", "hidden"), ("a b;c", "a_b_c"),
     ("", "domain")])
 def test_slug_is_a_safe_folder_name(raw, want):
-    assert run_mod.slug(raw) == want
-    assert "/" not in run_mod.slug(raw) and run_mod.slug(raw) not in (".", "..")
+    assert vet_mod.slug(raw) == want
+    assert "/" not in vet_mod.slug(raw) and vet_mod.slug(raw) not in (".", "..")
 
 
 def test_report_neutralizes_text_from_the_target():

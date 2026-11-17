@@ -1,5 +1,5 @@
 """
-The Markdown report for one `0x41 run`. Built only from what the tools
+The Markdown report for one `0x41 vet`. Built only from what the tools
 returned: akashi decided every verdict, kaidoku explained it; nothing here
 judges anything.
 
@@ -93,7 +93,7 @@ def markdown(rec: dict) -> str:
     scope = md(rec.get("scope")) if rec.get("scope") else "none (active proofs blocked)"
     leads = sorted(rec.get("leads") or [], key=lambda d: (STATE_ORDER.index(d.get("state", "unclear"))
                                                           if d.get("state") in STATE_ORDER else 9, d["id"]))
-    out = [f"# 0x41 run: {md(rec.get('target') or rec.get('domain'))}", "",
+    out = [f"# 0x41 vet: {md(rec.get('target') or rec.get('domain'))}", "",
            f"*{md(rec.get('started'))} · {tools} · scope: {scope}*", "",
            "mønømi found it · akashi proved it · kaidoku explained it. Every verdict below was "
            "decided by akashi's code from the evidence shown; the explanations never change one.", "",

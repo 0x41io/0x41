@@ -1,22 +1,22 @@
 """
 The 0x41 command line.
 
-    0x41 run example.com                        scan, prove (passive), explain
-    0x41 run example.com --scope scope.txt      ...and active proofs, after a typed yes
-    0x41 run example.com --ai                   ...with AI briefings (kaidoku)
+    0x41 vet example.com                        scan, prove (passive), explain
+    0x41 vet example.com --scope scope.txt      ...and active proofs, after a typed yes
+    0x41 vet example.com --ai                   ...with AI briefings (kaidoku)
 """
 
 import argparse
 import sys
 
-from x41 import __version__, run as run_mod
+from x41 import __version__, vet as vet_mod
 
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="0x41", description="0x41: mønømi finds · akashi proves · kaidoku explains")
     p.add_argument("--version", action="version", version=f"0x41 {__version__}")
     sub = p.add_subparsers(dest="command", required=True)
-    r = sub.add_parser("run", help="scan a domain, prove its leads, explain every finding")
+    r = sub.add_parser("vet", help="scan a domain, prove its leads, explain every finding")
     r.add_argument("domain", help="target domain, e.g. example.com")
     r.add_argument("--scope", metavar="FILE",
                    help="scope file (Monomi's format): needed for active proofs, which still ask first")
@@ -30,9 +30,9 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv=None) -> int:
     args = build_parser().parse_args(argv)
     print(f"[0x41] {__version__} · mønømi finds · akashi proves · kaidoku explains")
-    if args.command == "run":
+    if args.command == "vet":
         try:
-            return run_mod.run(args.domain, scope=args.scope, ai=args.ai, active=not args.no_active,
+            return vet_mod.vet(args.domain, scope=args.scope, ai=args.ai, active=not args.no_active,
                                cves=not args.no_cves, hosts_file=args.hosts)
         except KeyboardInterrupt:
             print("\n0x41: stopped. Anything already proven is in akashi's proof history.", file=sys.stderr)
