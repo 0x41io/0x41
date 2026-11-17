@@ -8,16 +8,19 @@ It talks over stdin/stdout, so nothing may ever be printed to stdout here:
 startup notes go to stderr, and vets run as their own processes with their
 output in a log file (x41/jobs.py).
 
-Four tools:
-    vet_start     start a passive vet in the background, get a job id back
-    vet_status    where it stands; when done, the findings, fixes and gaps
-    list_vets     earlier vets (from here or the terminal)
-    explain_cves  kaidoku's CVE lookup: NVD, EPSS, CISA KEV, a verdict
+Six tools:
+    vet_start      start a passive vet in the background, get a job id back
+    vet_status     where it stands; when done, the findings, fixes and gaps
+    list_vets      earlier vets (from here or the terminal)
+    explain_cves   kaidoku's CVE lookup: NVD, EPSS, CISA KEV, a verdict
+    prove_request  ask for a person's approval of a vet's waiting active proofs
+    prove_run      run them once the person approved in a terminal (ACTIVE)
 
 What it never does:
-- Active proofs. No tool takes a scope file; every vet runs with --no-active.
-  Active proofs need a typed yes at a real terminal (AGENTS.md), so blocked
-  ones come back with what they would send and the command to run them.
+- Active proofs without a person. No tool takes a scope file, a research
+  file or a yes, and every vet runs with --no-active. An active proof runs
+  only through prove_run, after the person typed yes in a real terminal
+  (`0x41 approve`, x41/approvals.py), for exactly what they were shown.
 - AI briefings. In a chat, the agent is already the explainer; kaidoku runs
   with ai=False here, so nothing bills the Anthropic API key twice.
 - Read files outside its own folders: job ids only reach runs/, and
@@ -26,6 +29,7 @@ What it never does:
 
 import argparse
 import contextlib
+import json
 import os
 import re
 import sys
@@ -34,7 +38,7 @@ from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import ToolAnnotations
 
-from x41 import __version__, jobs
+from x41 import __version__, approvals, jobs
 
 # The server itself. "0x41" is the name agents will see.
 mcp = MCPServer("0x41")
@@ -150,9 +154,10 @@ def vet_summary(st: dict) -> dict:
     if waiting:
         out["active_proofs_waiting"] = [_waiting(n) for n in waiting]
         out["to_run_active_proofs"] = (
-            f"In a terminal: 0x41 vet {st['domain']} --scope scope.txt  (only hosts the scope file "
-            "allows; every request is shown first and nothing runs without a typed yes). "
-            "They can't run from here.")
+            "Call prove_request with this job_id; the person approves it in a terminal with "
+            "`0x41 approve <id> --scope scope.txt` (every request is shown, nothing runs without a "
+            "typed yes); then call prove_run with the id. Or the person runs "
+            f"`0x41 vet {st['domain']} --scope scope.txt` in a terminal themselves.")
     cves = rec.get("cves") or {}
     if cves.get("results") or cves.get("missing"):
         out["cves"] = [_cve_row(r) for r in (cves.get("results") or [])[:LIST_CAP]]
@@ -237,8 +242,72 @@ def explain_cves(ids: list[str]) -> dict:
             "warnings": out["warnings"], "rejected": rejected, "not_checked": not_checked}
 
 
+@mcp.tool(annotations=ToolAnnotations(
+    title="Ask for approval of active proofs",
+    readOnlyHint=False,      # it writes a pending approval file...
+    destructiveHint=False,   # ...and sends nothing
+    openWorldHint=False))
+def prove_request(job_id: str, lead_ids: list[str] | None = None) -> dict:
+    """Ask the person to approve a finished vet's waiting active proofs (see
+    active_proofs_waiting in vet_status). Sends nothing. Returns an approval
+    id and the command the person runs in their own terminal:
+    `0x41 approve <id> --scope scope.txt`. That shows them every request
+    and needs their typed yes; then call prove_run with the id. Tell the
+    person what you're asking for and why. You can't approve it yourself.
+    lead_ids: optional, a subset of the waiting ones (default: all).
+    An unapproved request expires after 1 hour."""
+    try:
+        return approvals.request(job_id, lead_ids)
+    except (approvals.ApprovalError, jobs.JobError) as e:
+        raise ToolError(str(e)) from None
+
+
+@mcp.tool(annotations=ToolAnnotations(
+    title="ACTIVE: run approved proofs",
+    readOnlyHint=False,      # it sends requests to the target's servers...
+    destructiveHint=False,   # ...read-only ones (GET), within the approved scope
+    idempotentHint=False,
+    openWorldHint=True))
+def prove_run(rid: str) -> dict:
+    """ACTIVE: sends requests to the target's own servers. Runs the active
+    proofs the person approved in a terminal (`0x41 approve`), once: only
+    the leads and exact requests they were shown, inside their scope file,
+    within 15 minutes of approving. Refused if not approved yet, expired,
+    already used, or if the scope file or akashi's plan changed since.
+    Returns akashi's verdicts with kaidoku's explanation; every request is
+    in akashi's active.log, marked with this approval id."""
+    from akashi import api as akashi_api
+    from kaidoku import api as kaidoku_api
+    from x41 import vet as vet_mod
+    try:
+        job = approvals.claim(rid)  # every check, then marked used before anything is sent
+    except (approvals.ApprovalError, jobs.JobError) as e:
+        raise ToolError(str(e)) from None
+    try:
+        with contextlib.redirect_stdout(sys.stderr):  # stdout is the MCP channel
+            out = akashi_api.prove_active(job["scan"], job["scope"], job["approved_ids"],
+                                          research_path=job["research"], via="mcp", approval=rid)
+            verdicts_path = os.path.join(job["run_dir"], f"active-{rid}.jsonl")
+            vet_mod.write_verdicts(verdicts_path, out["target"], out["verdicts"])
+            leads = kaidoku_api.explain_history(verdicts_path)["leads"] if out["verdicts"] else []
+    except Exception as e:  # the approval is used up either way; say what happened
+        approvals.record_result(rid, {"error": f"{type(e).__name__}: {e}"[:300]})
+        raise ToolError(f"the run failed ({type(e).__name__}: {e}); approval {rid} is used up") from None
+    full = {**out, "rid": rid, "job_id": job["job_id"], "leads": leads}
+    with open(os.path.join(job["run_dir"], f"active-{rid}.json"), "w", encoding="utf-8") as f:
+        json.dump(full, f, indent=2)
+    approvals.record_result(rid, out)
+    return {"rid": rid, "job_id": job["job_id"], "tally": out["tally"],
+            "findings": [_finding(d) for d in leads[:LIST_CAP]],
+            "skipped": out.get("skipped") or [],
+            "requests_approved": job["requests"],
+            "saved": os.path.join(job["run_dir"], f"active-{rid}.json"),
+            "note": UNTRUSTED}
+
+
 def main(argv=None) -> None:
     argparse.ArgumentParser(prog="0x41 mcp", description="0x41 MCP server (talks over stdin/stdout)").parse_args(argv)
     # stderr, never stdout: stdout carries the MCP messages
-    print(f"0x41 MCP server {__version__}: passive only (no active proofs, no AI briefings)", file=sys.stderr)
+    print(f"0x41 MCP server {__version__}: passive, active proofs only after a terminal approval, "
+          "no AI briefings", file=sys.stderr)
     mcp.run()

@@ -4,7 +4,7 @@ The 0x41 command line.
     0x41 vet example.com                        scan, prove (passive), explain
     0x41 vet example.com --scope scope.txt      ...and active proofs, after a typed yes
     0x41 vet example.com --ai                   ...with AI briefings (kaidoku)
-    0x41 mcp                                    the MCP server, for AI agents (passive only)
+    0x41 mcp                                    the MCP server, for AI agents
     0x41 mcp setup                              add it to the Claude desktop app's config
     0x41 approve RID --scope scope.txt          approve active proofs Claude asked for (typed yes)
 """
@@ -35,7 +35,7 @@ def build_parser() -> argparse.ArgumentParser:
     a.add_argument("--scope", metavar="FILE", required=True,
                    help="scope file (mønømi's format): only hosts it allows are touched")
     a.add_argument("--research", metavar="FILE", help="research header file (sent on active requests)")
-    m = sub.add_parser("mcp", help="run the MCP server for AI agents (passive only; talks over stdin/stdout)")
+    m = sub.add_parser("mcp", help="run the MCP server for AI agents (talks over stdin/stdout)")
     m.add_argument("action", nargs="?", choices=["setup"],
                    help="setup: add the server to the Claude desktop app's config")
     m.add_argument("--yes", action="store_true", help="setup: write without asking")

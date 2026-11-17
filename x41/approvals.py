@@ -151,7 +151,7 @@ def show_plan(steps: list, out) -> None:
 
 
 def approve(rid: str, scope_path: str, research_path: str | None = None, *, root: str | None = None,
-            now=None, plan=default_plan, ask=input, interactive=None, out=print) -> int:
+            now=None, plan=None, ask=input, interactive=None, out=print) -> int:
     """`0x41 approve RID --scope FILE`: show akashi's plan with every request,
     ask for a typed yes, then lock the approval to exactly that."""
     now = _now(now)
@@ -170,7 +170,7 @@ def approve(rid: str, scope_path: str, research_path: str | None = None, *, root
             raise ApprovalError(f"the research header file isn't usable: {problem}")
 
     run_dir = os.path.dirname(os.path.dirname(path))
-    p = plan(os.path.join(run_dir, "scan.json"), scope_path)
+    p = (plan or default_plan)(os.path.join(run_dir, "scan.json"), scope_path)
     if p["scope"].get("problem") or not p["scope"].get("loaded"):
         raise ApprovalError(f"the scope file can't be used: {p['scope'].get('problem') or 'not loaded'}")
     steps = [s for s in p["steps"] if s["id"] in data["lead_ids"] and s["active"]]
@@ -205,7 +205,7 @@ def approve(rid: str, scope_path: str, research_path: str | None = None, *, root
 
 # --- 3. the claim (MCP) --------------------------------------------------------
 
-def claim(rid: str, *, root: str | None = None, now=None, plan=default_plan) -> dict:
+def claim(rid: str, *, root: str | None = None, now=None, plan=None) -> dict:
     """Every check again, then mark the approval used BEFORE returning it, so
     it can't run twice even if the run crashes. Returns what to run:
     scan path, scope path, research path, approved ids."""
@@ -228,7 +228,7 @@ def claim(rid: str, *, root: str | None = None, now=None, plan=default_plan) -> 
                         "nothing runs (approve again)")
         run_dir = os.path.dirname(os.path.dirname(path))
         scan = os.path.join(run_dir, "scan.json")
-        p = plan(scan, data["scope"]["path"])
+        p = (plan or default_plan)(scan, data["scope"]["path"])
         now_requests = {s["id"]: list(s["requests"]) for s in p["steps"]
                         if s["id"] in data["approved_ids"] and s["active"] and s["ready"]}
         if now_requests != data["requests"]:
@@ -248,5 +248,8 @@ def record_result(rid: str, result: dict, *, root: str | None = None, now=None) 
     now = _now(now)
     with _lock:
         path, data = _load(rid, root)
-        _event(data, now, "ran", tally=result.get("tally"), skipped=result.get("skipped"))
+        if result.get("error"):
+            _event(data, now, "failed", error=result["error"])
+        else:
+            _event(data, now, "ran", tally=result.get("tally"), skipped=result.get("skipped"))
         _write(path, data)

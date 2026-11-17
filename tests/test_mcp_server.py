@@ -73,9 +73,9 @@ def stand_in_start(monkeypatch, script="import time; time.sleep(30)"):
 
 # --- the tools on offer -----------------------------------------------------
 
-def test_exactly_four_tools_and_none_can_go_active():
+def test_six_tools_and_none_takes_a_scope_or_a_yes():
     tools = {t.name: t for t in asyncio.run(mcp_server.mcp.list_tools())}
-    assert set(tools) == {"vet_start", "vet_status", "list_vets", "explain_cves"}
+    assert set(tools) == {"vet_start", "vet_status", "list_vets", "explain_cves", "prove_request", "prove_run"}
     for t in tools.values():
         params = set((t.input_schema or {}).get("properties", {}))
         assert not params & {"scope", "scope_file", "active", "yes", "approve", "approved_ids", "ai"}, t.name
@@ -83,6 +83,11 @@ def test_exactly_four_tools_and_none_can_go_active():
     assert tools["list_vets"].annotations.read_only_hint is True
     assert tools["vet_start"].annotations.destructive_hint is False
     assert "PASSIVE ONLY" in tools["vet_start"].description
+    run = tools["prove_run"]
+    assert set(run.input_schema["properties"]) == {"rid"}  # the approval id, nothing else
+    assert run.description.lstrip().startswith("ACTIVE") and run.annotations.title.startswith("ACTIVE")
+    assert run.annotations.read_only_hint is False and run.annotations.open_world_hint is True
+    assert tools["prove_request"].annotations.open_world_hint is False
 
 
 # --- vet_start --------------------------------------------------------------
@@ -159,14 +164,15 @@ def test_status_of_a_finished_vet(homes):
     assert "report_markdown" not in out
 
 
-def test_waiting_active_proofs_say_what_and_how_but_cant_run_here(homes):
+def test_waiting_active_proofs_say_what_and_how(homes):
     finished_vet(homes)
     out = call("vet_status", {"job_id": JOB})
     assert out["active_proofs_waiting"] == [
         {"id": "L2", "rule": "around_cdn", "reason": "no scope file given",
          "would_send": ["GET https://www.example.test/ (through the CDN)"]}]
     how = out["to_run_active_proofs"]
-    assert "0x41 vet example.test --scope scope.txt" in how and "typed yes" in how and "can't run from here" in how
+    assert "prove_request" in how and "0x41 approve <id> --scope scope.txt" in how and "typed yes" in how
+    assert "0x41 vet example.test --scope scope.txt" in how
 
 
 def test_without_a_scope_it_says_why_there_is_no_request_list(homes):
@@ -283,7 +289,7 @@ def test_0x41_mcp_prints_nothing_to_stdout(monkeypatch, capsys):
     assert cli.main(["mcp"]) == 0
     got = capsys.readouterr()
     assert got.out == ""
-    assert "passive only" in got.err
+    assert "active proofs only after a terminal approval" in got.err
 
 
 def test_vet_keeps_what_waiting_active_proofs_would_send(tmp_path):
