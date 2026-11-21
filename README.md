@@ -62,6 +62,21 @@ The scope file uses mønømi's format (in/out lines, as on a bug bounty program'
 
 **Where runs go:** `runs/<domain>/<time>/` in the clone (`scan.json`, `verdicts.jsonl`, `run.json`, `report.md`). A plain install uses `~/.0x41`; `X41_HOME` overrides both. Every verdict also goes into akashi's proof history, so `akashi recheck` works after you fix something.
 
+## What changed? `0x41 diff`
+
+```bash
+0x41 diff example.com                          # its last two finished runs
+0x41 diff runs/example.com/A runs/example.com/B  # two runs you pick
+0x41 diff example.com --json                   # as data
+0x41 diff example.com --exit-code              # exit 1 if anything important changed
+```
+
+Read-only: it compares two saved vets and contacts nothing. **Important:** new hosts (or known names that start resolving), new open ports or CVEs on the target's own servers (not CDN edge), new leads and attack paths, a lead akashi now confirms, a confirmed lead now fixed (or open again), weaker email posture. **Info:** new hosts outside the scope file (don't touch), hosts that stopped existing in DNS, stronger email posture, wildcard changes, leads mønømi stopped flagging.
+
+It stays honest: leads are matched by what they're about, never their P1/L2 number; a host only counts as new if a source that found it was complete in the older run too; a source that failed is listed under "Couldn't tell", never as a change; and only akashi can call something fixed.
+
+0x41 is open source. A hosted, paid continuous-monitoring service will reuse this same change engine; that service isn't part of this repo.
+
 ## Use it from Claude (MCP)
 
 `0x41 mcp` is an MCP server, so an AI agent like Claude can run the whole chain: mønømi finds, akashi proves, kaidoku explains. (mønømi's own MCP server stays the place for its separate checks.)

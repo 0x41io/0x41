@@ -8,6 +8,8 @@ The 0x41 command line.
     0x41 mcp setup                              add it to the Claude desktop app's config
     0x41 mcp keys                               save this terminal's OTX / NVD keys for it (600 file)
     0x41 approve RID --scope scope.txt          approve active proofs Claude asked for (typed yes)
+    0x41 diff example.com                       what changed between its last two runs (read-only)
+    0x41 diff RUN_DIR RUN_DIR                   ...or between two run folders you pick
 """
 
 import argparse
@@ -36,6 +38,14 @@ def build_parser() -> argparse.ArgumentParser:
     a.add_argument("--scope", metavar="FILE", required=True,
                    help="scope file (mønømi's format): only hosts it allows are touched")
     a.add_argument("--research", metavar="FILE", help="research header file (sent on active requests)")
+    d = sub.add_parser("diff", help="what changed between two vet runs, and which changes matter (read-only)")
+    d.add_argument("runs", nargs="+", metavar="DOMAIN_OR_RUN",
+                   help="a domain (its last two runs), or two run folders")
+    d.add_argument("--scope", metavar="FILE",
+                   help="scope file for new hosts (default: the one the newer vet used)")
+    d.add_argument("--json", action="store_true", help="print the result as JSON")
+    d.add_argument("--exit-code", action="store_true",
+                   help="exit 1 when there are important changes (for scripts), like git diff")
     m = sub.add_parser("mcp", help="run the MCP server for AI agents (talks over stdin/stdout)")
     m.add_argument("action", nargs="?", choices=["setup", "keys"],
                    help="setup: add the server to the Claude desktop app's config; "
@@ -59,6 +69,8 @@ def main(argv=None) -> int:
         from x41 import mcp_server
         mcp_server.main([])
         return 0
+    if args.command == "diff":
+        return run_diff(args)   # before the banner, so --json output is pure JSON
     print(f"[0x41] {__version__} · mønømi finds · akashi proves · kaidoku explains")
     if args.command == "approve":
         from x41 import approvals
@@ -78,3 +90,22 @@ def main(argv=None) -> int:
             print("\n0x41: stopped. Anything already proven is in akashi's proof history.", file=sys.stderr)
             return 130
     return 1
+
+
+def run_diff(args) -> int:
+    """0x41 diff: exit 0 (or 1 with --exit-code and important changes), 2 if it can't compare."""
+    import json
+    from x41 import changes
+    try:
+        if len(args.runs) == 1:
+            older, newer = changes.find_runs(args.runs[0])
+        elif len(args.runs) == 2:
+            older, newer = args.runs
+        else:
+            raise changes.DiffError("give a domain, or exactly two run folders")
+        result = changes.compare(changes.load_run(older), changes.load_run(newer), args.scope)
+    except changes.DiffError as e:
+        print(f"0x41 diff: {e}", file=sys.stderr)
+        return 2
+    print(json.dumps(result, indent=2) if args.json else changes.markdown(result))
+    return 1 if args.exit_code and result["counts"]["important"] else 0
