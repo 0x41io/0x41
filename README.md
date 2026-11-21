@@ -35,6 +35,8 @@ The report (`report.md`) has a summary table, each finding with its proof, fix a
 
 Since v0.8, an active proof that didn't run also says what it's about, in akashi's words ("would check whether www.example.com can be reached directly at the origin 203.0.113.7, around the CDN"), so you never have to open `scan.json` to find out which hosts "L4" means. And a finding carries mønømi's notes from its validation gate, such as "email spoofing is often out of scope for bug bounty programs: check the program's rules", or a caution that it runs through a staging or beta host. A note is a label, never a filter: the finding and its verdict stay exactly as akashi decided them.
 
+Since v0.8.1 (mønømi v1.22.1), hosts on Microsoft 365 or Google's shared front end are never treated as a possible origin server, so a company's `autodiscover` record no longer turns into "go around the CDN" leads.
+
 ## Install
 
 Requires Python 3.14 (mønømi needs it).
