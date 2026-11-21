@@ -47,6 +47,8 @@ pip install -e .
 
 `pip install -e .` installs the `0x41` command and the three tools at release tags that are tested together (see `pyproject.toml`). Exact tags, not loose version ranges: the tools aren't on PyPI, and a bare package name could pull a stranger's package.
 
+After a pin bump, `pip install -e .` can leave an older tool installed. `0x41 vet`, `0x41 approve` and `0x41 mcp` check this first: if a tool is older than its pin they don't start, and they print the one command that fixes it (for the MCP server, in the Claude app's log for it). A newer tool only gets a one-line note.
+
 ## Use
 
 ```bash

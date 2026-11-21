@@ -56,8 +56,27 @@ def build_parser() -> argparse.ArgumentParser:
     return p
 
 
+def check_versions() -> bool:
+    """False (after saying why on stderr) if an installed tool is older than
+    0x41 pins. stderr, never stdout: for `0x41 mcp` stdout is the MCP channel,
+    and the Claude app shows stderr in its log for the server."""
+    from x41 import versions
+    problems, warnings = versions.check(__version__)
+    for w in warnings:
+        print(f"0x41: note: {w}", file=sys.stderr)
+    if problems:
+        print("0x41 can't start:", file=sys.stderr)
+        for p in problems:
+            print(f"- {p}", file=sys.stderr)
+        return False
+    return True
+
+
 def main(argv=None) -> int:
     args = build_parser().parse_args(argv)
+    needs_tools = args.command in ("vet", "approve") or (args.command == "mcp" and args.action is None)
+    if needs_tools and not check_versions():
+        return 2
     if args.command == "mcp":
         if args.action == "setup":
             from x41 import mcp_setup
