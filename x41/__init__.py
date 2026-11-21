@@ -3,7 +3,7 @@
 mønømi finds · akashi proves · kaidoku explains. `0x41 vet example.com`
 chains them: a passive scan, the passive proofs (automatic), the active
 proofs (only inside scope, after a typed yes), and a report that explains
-every finding.
+every finding. `0x41 diff` shows what changed between two vets.
 """
 
-__version__ = "0.4.6"
+__version__ = "0.5.0"
