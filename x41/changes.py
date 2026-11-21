@@ -26,6 +26,7 @@ import os
 from akashi.scan import lead_key
 from monomi import common
 from monomi import scope as scope_mod
+from monomi.cli import CRTSH_BEHIND, DISPLAY_NAMES, SOURCE_NAMES
 
 from x41 import home, report
 from x41.vet import clean_target, slug
@@ -91,18 +92,43 @@ def load_run(run_dir: str) -> dict:
 
 # --- sources ------------------------------------------------------------------
 
-def source_health(scan: dict) -> dict[str, str]:
-    """Each source in a scan: "complete", "incomplete" or "failed".
+def _short(text, limit=70) -> str:
+    text = str(text).split(";")[0].strip()
+    return text if len(text) <= limit else text[:limit - 3].rstrip() + "..."
 
-    incomplete = cut short (mønømi's "partial"), or an old saved copy used
-    because the live source failed ("from_saved"). failed = it errored and
-    nothing came back."""
+
+def source_report(scan: dict) -> dict[str, tuple[str, str]]:
+    """Each source in a scan -> (state, short reason).
+
+    state is "complete", "incomplete" or "failed":
+      incomplete = cut short (mønømi's "partial"), or an old saved copy used
+                   because the live source failed ("from_saved")
+      failed     = it errored and nothing came back
+
+    mønømi files errors under a source's display name ("AlienVault OTX") and
+    results under its own name ("otx"); SOURCE_NAMES joins the two, so one
+    failure is one entry. When a saved copy stood in for a failed source, the
+    saved copy's entry tells the story and the error isn't counted twice."""
     out = {}
     for name, entry in (scan.get("sources") or {}).items():
-        out[name] = "incomplete" if entry.get("partial") or entry.get("from_saved") else "complete"
-    for name in scan.get("errors") or {}:
-        out.setdefault(name, "failed")
+        if entry.get("from_saved"):
+            out[name] = ("incomplete", f"used a saved copy from {entry.get('collected_at') or 'an earlier run'}")
+        elif entry.get("partial"):
+            out[name] = ("incomplete", f"cut short ({_short(entry['partial'], 50)})")
+        else:
+            out[name] = ("complete", "")
+    for name, err in (scan.get("errors") or {}).items():
+        key = SOURCE_NAMES.get(name, name)
+        if key in out:
+            continue
+        why = "behind on the CT logs" if str(err).startswith(CRTSH_BEHIND) else _short(err)
+        out[key] = ("failed", why)
     return out
+
+
+def source_health(scan: dict) -> dict[str, str]:
+    """Each source in a scan: "complete", "incomplete" or "failed"."""
+    return {name: state for name, (state, _) in source_report(scan).items()}
 
 
 def _found_by(scan: dict) -> dict[str, set]:
@@ -207,6 +233,8 @@ def _leads(scan: dict) -> dict[str, dict] | None:
 
 def lead_changes(old, new, changes, couldnt_tell):
     before, after = _leads(old["scan"]), _leads(new["scan"])
+    confirmed = {v["key"] for v in old["run"].get("verdicts") or []
+                 if v.get("key") and v.get("status") == "confirmed"}
     if before is None or after is None:
         couldnt_tell.append({"what": "leads and attack paths", "why": "one of the runs has no attack-path data"})
         return
@@ -216,9 +244,12 @@ def lead_changes(old, new, changes, couldnt_tell):
                                f"rule {item.get('rule') or '?'}"))
     for key in sorted(set(before) - set(after)):
         item = before[key]
+        # Not "fixed": mønømi not seeing it isn't proof. If akashi confirmed
+        # it last time, point at the one command that can prove the fix.
+        detail = ("akashi confirmed it last run: run `akashi recheck` to prove it's fixed" if key in confirmed
+                  else "mønømi stopped flagging it; only akashi can say it's fixed")
         changes.append(_change(INFO, "lead_not_flagged", key,
-                               f"no longer flagged: {item.get('title') or key}",
-                               "mønømi stopped flagging it; only akashi can say it's fixed"))
+                               f"no longer flagged: {item.get('title') or key}", detail))
 
 
 def verdict_changes(old, new, changes, couldnt_tell):
@@ -284,10 +315,24 @@ def wildcard_changes(old, new, changes, couldnt_tell):
 
 
 def failed_sources(old, new, couldnt_tell):
-    for label, r in (("older", old), ("newer", new)):
-        for name, state in sorted(source_health(r["scan"]).items()):
-            if state != "complete":
-                couldnt_tell.append({"what": f"{name} ({label} run)", "why": state})
+    """One line per source that wasn't complete in either run, with
+    mønømi's own reason: "crt.sh: behind on the CT logs (both runs)"."""
+    a, b = source_report(old["scan"]), source_report(new["scan"])
+    for name in sorted(set(a) | set(b)):
+        sa, sb = a.get(name, ("missing", "")), b.get(name, ("missing", ""))
+        bad_a, bad_b = sa[0] in ("incomplete", "failed"), sb[0] in ("incomplete", "failed")
+        if not (bad_a or bad_b):
+            continue
+        what = DISPLAY_NAMES.get(name, name)
+        if bad_a and bad_b and sa[1] == sb[1]:
+            why = f"{sa[1]} (both runs)"
+        elif bad_a and bad_b:
+            why = f"older run: {sa[1]}; newer run: {sb[1]}"
+        elif bad_a:
+            why = f"{sa[1]} (older run)"
+        else:
+            why = f"{sb[1]} (newer run)"
+        couldnt_tell.append({"what": what, "why": why})
 
 
 # --- putting it together ------------------------------------------------------

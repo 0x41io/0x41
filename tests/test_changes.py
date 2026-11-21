@@ -154,7 +154,32 @@ def test_failed_source_is_couldnt_tell_never_a_change(tmp_path):
     new = scan(errors={"crt.sh": "HTTP 502"})
     r = diff(tmp_path, scan(), new)
     assert r["changes"] == []
-    assert {"what": "crt.sh (newer run)", "why": "failed"} in r["couldnt_tell"]
+    assert {"what": "crt.sh", "why": "HTTP 502 (newer run)"} in r["couldnt_tell"]
+
+
+BEHIND = "no certificates for this domain yet: the crt.sh database answered with 0 while Cert Spotter found 3"
+
+
+def test_same_failure_in_both_runs_is_one_line_with_monomis_reason(tmp_path):
+    r = diff(tmp_path, scan(errors={"crt.sh": BEHIND}), scan(errors={"crt.sh": BEHIND}))
+    assert r["couldnt_tell"] == [{"what": "crt.sh", "why": "behind on the CT logs (both runs)"}]
+
+
+def test_different_failures_say_which_run(tmp_path):
+    r = diff(tmp_path, scan(errors={"crt.sh": BEHIND}), scan(errors={"crt.sh": "HTTP 502"}))
+    assert r["couldnt_tell"] == [{"what": "crt.sh",
+                                  "why": "older run: behind on the CT logs; newer run: HTTP 502"}]
+
+
+def test_saved_copy_is_one_entry_not_two(tmp_path):
+    # From the 41xlab lab run: OTX timed out, mønømi used its saved copy, and
+    # filed the error as "AlienVault OTX" but the copy as "otx".
+    new = scan(errors={"AlienVault OTX": "read timed out; using the saved copy from 2026-11-21T03:05:41+00:00"})
+    new["sources"]["otx"] = {"source": "otx", "subdomains": [], "from_saved": True,
+                             "collected_at": "2026-11-21T03:05:41+00:00"}
+    r = diff(tmp_path, scan(), new)
+    assert r["couldnt_tell"] == [{"what": "AlienVault OTX",
+                                  "why": "used a saved copy from 2026-11-21T03:05:41+00:00 (newer run)"}]
 
 
 def test_saved_copy_counts_as_incomplete(tmp_path):
@@ -227,6 +252,22 @@ def test_lead_that_disappears_is_not_called_fixed(tmp_path):
 
 
 KEY = "takeover:old.diff.test>old-zz9.azurewebsites.net"
+
+
+def test_disappeared_lead_akashi_confirmed_points_at_recheck(tmp_path):
+    # The lab case: akashi confirmed email spoofing, then DMARC went to
+    # reject, mønømi stopped flagging it and akashi had nothing to prove.
+    old = scan(paths={"paths": [TAKEOVER], "leads": []})
+    r = diff(tmp_path, old, scan(), run(verdicts=[verdict("confirmed")]))
+    assert kinds(r) == ["lead_not_flagged"]
+    assert "akashi recheck" in r["changes"][0]["detail"]
+    assert "fixed" not in r["changes"][0]["title"]
+
+
+def test_disappeared_lead_never_confirmed_has_no_recheck_pointer(tmp_path):
+    old = scan(paths={"paths": [TAKEOVER], "leads": []})
+    r = diff(tmp_path, old, scan(), run(verdicts=[verdict("inconclusive")]))
+    assert "akashi recheck" not in r["changes"][0]["detail"]
 
 
 def verdict(status):
