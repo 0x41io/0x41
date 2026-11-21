@@ -8,14 +8,16 @@ one, so the rules are tested directly and nothing is sent anywhere.
 import json
 import os
 import re
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import pytest
+
+from monomi import scope as scope_mod
 
 from x41 import approvals, cli, jobs
 
 JOB = "example.test/2026-11-16_180000"
-T0 = datetime(2026, 11, 16, 19, 0, 0)
+T0 = datetime(2026, 11, 16, 19, 0, 0, tzinfo=timezone.utc)
 REQ = ["GET https://www.example.test/  (through the CDN)",
        "GET the origin 198.51.100.7 with Host: www.example.test  (reached via dev.example.test)"]
 
@@ -69,7 +71,7 @@ def test_request_makes_a_pending_approval_and_sends_nothing(lab):
     assert out["status"] == "pending" and out["lead_ids"] == ["L2", "L9"]
     assert out["ask_the_person_to_run"] == f"0x41 approve {out['rid']} --scope scope.txt"
     data = saved(lab, out["rid"])
-    assert data["status"] == "pending" and data["request_expires"] == "2026-11-16T20:00:00"
+    assert data["state"] == "pending" and data["expires"] == "2026-11-16T20:00:00+00:00"
     assert [e["event"] for e in data["events"]] == ["requested"]
 
 
@@ -110,17 +112,17 @@ def test_approve_shows_every_request_and_locks_them_in(lab):
         assert f"would send: {r}" in shown
     assert "L9" in shown and "BLOCKED" in shown  # the blocked one is shown, not approved
     data = saved(lab, rid)
-    assert data["status"] == "approved" and data["approved_ids"] == ["L2"]
+    assert data["state"] == "approved" and data["approved_ids"] == ["L2"]
     assert data["requests"] == {"L2": REQ}
-    assert data["scope"]["sha256"] == approvals.sha256_of(lab["scope"])
-    assert data["expires"] == "2026-11-16T19:15:00"
+    assert data["scope"]["sha256"] == scope_mod.load(lab["scope"]).sha256
+    assert data["expires"] == "2026-11-16T19:15:00+00:00"
     assert data["events"][-1]["event"] == "approved"
 
 
 def test_anything_but_yes_approves_nothing(lab):
     rid, code, lines = approved(lab, answer="y")
     assert code == 1 and "Nothing will run" in lines[-1]
-    assert saved(lab, rid)["status"] == "pending"
+    assert saved(lab, rid)["state"] == "pending"
 
 
 def test_approve_needs_a_real_terminal(lab):
@@ -129,12 +131,12 @@ def test_approve_needs_a_real_terminal(lab):
         approvals.approve(rid, lab["scope"], root=lab["root"], now=T0, plan=plan_for(),
                           ask=lambda q: "yes", interactive=lambda: False, out=lambda s: None)
     data = saved(lab, rid)
-    assert data["status"] == "pending" and data["events"][-1]["event"] == "refused"
+    assert data["state"] == "pending" and data["events"][-1]["event"] == "refused"
 
 
 def test_a_request_nobody_approved_expires(lab):
     rid = approvals.request(JOB, root=lab["root"], now=T0)["rid"]
-    with pytest.raises(approvals.ApprovalError, match="expired before it was approved"):
+    with pytest.raises(approvals.ApprovalError, match="expired at 2026-11-16T20:00:00"):
         approvals.approve(rid, lab["scope"], root=lab["root"], now=T0 + timedelta(hours=1, seconds=1),
                           plan=plan_for(), ask=lambda q: "yes", interactive=lambda: True, out=lambda s: None)
 
@@ -146,13 +148,13 @@ def test_a_bad_scope_file_approves_nothing(lab):
         approvals.approve(rid, str(lab["tmp"] / "nope.txt"), plan=plan_for(), **kw)
     with pytest.raises(approvals.ApprovalError, match="can't be used: no valid rules"):
         approvals.approve(rid, lab["scope"], plan=plan_for(problem="no valid rules"), **kw)
-    assert saved(lab, rid)["status"] == "pending"
+    assert saved(lab, rid)["state"] == "pending"
 
 
 def test_nothing_ready_means_nothing_to_approve(lab):
     rid, code, lines = approved(lab, plan=plan_for(ready=False))
     assert code == 1 and "nothing to approve" in lines[-1]
-    assert saved(lab, rid)["status"] == "pending"
+    assert saved(lab, rid)["state"] == "pending"
 
 
 def test_an_unusable_research_file_approves_nothing(lab, monkeypatch):
@@ -167,7 +169,7 @@ def test_an_unusable_research_file_approves_nothing(lab, monkeypatch):
 
 def test_an_approval_cant_be_approved_twice(lab):
     rid, _, _ = approved(lab)
-    with pytest.raises(approvals.ApprovalError, match="is approved, not pending"):
+    with pytest.raises(approvals.ApprovalError, match="is approved, not waiting for a yes"):
         approvals.approve(rid, lab["scope"], root=lab["root"], now=T0, plan=plan_for(),
                           ask=lambda q: "yes", interactive=lambda: True, out=lambda s: None)
 
@@ -179,22 +181,23 @@ def test_claim_runs_once(lab):
     got = approvals.claim(rid, root=lab["root"], now=T0 + timedelta(minutes=5), plan=plan_for())
     assert got["approved_ids"] == ["L2"] and got["scope"] == os.path.realpath(lab["scope"])
     assert got["scan"].endswith("scan.json") and got["requests"] == {"L2": REQ}
-    assert saved(lab, rid)["status"] == "used"  # marked used before anything ran
+    assert saved(lab, rid)["state"] == "used"  # marked used before anything ran
     with pytest.raises(approvals.ApprovalError, match="already used"):
         approvals.claim(rid, root=lab["root"], now=T0 + timedelta(minutes=6), plan=plan_for())
 
 
 def test_claim_before_approval_says_how(lab):
     rid = approvals.request(JOB, root=lab["root"], now=T0)["rid"]
-    with pytest.raises(approvals.ApprovalError, match=f"hasn't been approved yet.*0x41 approve {rid}"):
+    how = f"pending: the person running 0x41 has to approve it first with `0x41 approve {rid} --scope FILE`"
+    with pytest.raises(approvals.ApprovalError, match=how):
         approvals.claim(rid, root=lab["root"], now=T0, plan=plan_for())
 
 
 def test_claim_after_expiry(lab):
     rid, _, _ = approved(lab)
-    with pytest.raises(approvals.ApprovalError, match="expired at 19:15"):
+    with pytest.raises(approvals.ApprovalError, match="expired at 2026-11-16T19:15:00"):
         approvals.claim(rid, root=lab["root"], now=T0 + timedelta(minutes=15, seconds=1), plan=plan_for())
-    assert saved(lab, rid)["status"] == "expired"
+    assert saved(lab, rid)["state"] == "approved"  # refused, never run
 
 
 def test_claim_refuses_if_the_scope_file_changed(lab):
@@ -203,7 +206,7 @@ def test_claim_refuses_if_the_scope_file_changed(lab):
         f.write("*.other.test\n")  # widened after approval
     with pytest.raises(approvals.ApprovalError, match="scope file changed"):
         approvals.claim(rid, root=lab["root"], now=T0, plan=plan_for())
-    assert saved(lab, rid)["status"] == "approved"  # refused, not used up
+    assert saved(lab, rid)["state"] == "approved"  # refused, not used up
 
 
 def test_claim_refuses_if_the_research_file_changed(lab, monkeypatch):
@@ -234,7 +237,7 @@ def test_every_refusal_is_on_record(lab):
         approvals.claim(rid, root=lab["root"], now=T0, plan=plan_for())
     approvals.record_result(rid, {"tally": {"confirmed": 1}, "skipped": []}, root=lab["root"], now=T0)
     events = [e["event"] for e in saved(lab, rid)["events"]]
-    assert events == ["requested", "approved", "claimed", "refused", "ran"]
+    assert events == ["requested", "approved", "used", "refused", "ran"]
 
 
 # --- the command ------------------------------------------------------------------
@@ -248,3 +251,30 @@ def test_cli_approve_reports_a_refusal(lab, capsys, monkeypatch):
 def test_cli_approve_needs_a_scope_file():
     with pytest.raises(SystemExit):
         cli.main(["approve", "k7m2-x9pq"])
+
+
+# --- shared core (v0.6.0): what 0x41 gains from mønømi's approvals core -----------
+
+def test_a_second_server_can_not_run_it_too(lab):
+    # Another `0x41 mcp` process already claimed it (its .used file exists):
+    # this one must refuse, even though its own copy of the record says approved
+    rid, _, _ = approved(lab)
+    (lab["tmp"] / "runs" / JOB / "approvals" / f"{rid}.used").write_text("")
+    with pytest.raises(approvals.ApprovalError, match="already used"):
+        approvals.claim(rid, root=lab["root"], now=T0, plan=plan_for())
+    assert saved(lab, rid)["state"] == "approved"   # this server never ran it
+
+
+def test_research_files_are_checked_by_monomis_parser(lab):
+    research = lab["tmp"] / "research.txt"
+    research.write_text("Host: evil.test\n")   # would change where requests go
+    assert "can't be set by a research file" in approvals.research_problem(str(research))
+    research.write_text("X-HackerOne-Research: x41ok\n")
+    assert approvals.research_problem(str(research)) is None
+
+
+def test_the_approval_message_shows_local_time(lab):
+    rid, code, lines = approved(lab)
+    assert code == 0
+    local = (T0 + approvals.APPROVAL_TTL).astimezone().strftime("%H:%M")
+    assert lines[-1].endswith(f"until {local}.")

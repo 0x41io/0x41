@@ -108,9 +108,11 @@ Active proofs (they send requests to the target's own servers) never run on Clau
    It shows every lead and every exact request it would send (and anything blocked or out of scope), then waits for you to type `yes`. It refuses if stdin isn't a real terminal.
 3. Claude calls `prove_run` with the id. It runs only what you were shown.
 
-An approval covers one vet, the leads listed, the exact requests shown, and the scope file (and research header file) **as they were when you approved** (sha256). It's good for **one run, within 15 minutes**; an unanswered request expires after an hour. If anything differs (the scope file was edited, akashi's plan changed, it was already used, it expired), `prove_run` refuses and nothing is sent. Every event, refusals included, is kept in `runs/<domain>/<time>/approvals/<id>.json`, and every request akashi sends is in its `scans/active.log` with `"via": "mcp"` and the approval id.
+An approval covers one vet, the leads listed, the exact requests shown, and the scope file (and research header file) **as they were when you approved** (sha256). It's good for **one run, within 15 minutes**, even with more than one `0x41 mcp` server running (the first to claim it wins, the rest refuse); an unanswered request expires after an hour. If anything differs (the scope file was edited, akashi's plan changed, it was already used, it expired), `prove_run` refuses and nothing is sent. Every event, refusals included, is kept in `runs/<domain>/<time>/approvals/<id>.json` (times in UTC), and every request akashi sends is in its `scans/active.log` with `"via": "mcp"` and the approval id.
 
-**The limit:** this stops an agent that only has MCP tools. An agent that can also run shell commands on your machine could fake a terminal, the same limit as mønømi's `--allow-active`: anything that can run commands as you can approve as you. Don't leave an agent with both unattended.
+**The limit:** this stops an agent that only has MCP tools. An agent that can also run shell commands on your machine could fake a terminal, the same limit as mønømi's own approvals: anything that can run commands as you can approve as you. Don't leave an agent with both unattended.
+
+The approvals use mønømi's approvals core (`monomi.approvalcore`), the same code that gates mønømi's own active checks, so every 0x41 approval gate shares one tested copy.
 
 Why not a confirmation popup in the Claude app (MCP "elicitation")? It was tested on 2026-11-16 and the app doesn't support it (it answers `Method not found`), and other clients have been reported to accept such prompts without showing them. A terminal yes can't be faked by the model.
 

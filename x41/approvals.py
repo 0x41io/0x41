@@ -16,58 +16,38 @@ a second use or a missing piece means refuse: nothing is sent. No MCP tool
 can supply a scope file, a research file or a yes; claim() takes only the
 approval id.
 
-Each approval is one JSON file, runs/<domain>/<time>/approvals/<rid>.json,
-with every event in it (refusals too), so it's its own audit trail.
+Since v0.6.0 the record keeping, the typed yes and the single-use claim are
+mønømi's approvals core (monomi.approvalcore), the one every 0x41 approval
+gate shares. "Used" is a <rid>.used file only one process can create, so
+two `0x41 mcp` servers can never both run the same approval. This module
+keeps what is 0x41's own: building a request from a vet's waiting leads,
+showing akashi's plan, and checking on claim that the plan still matches.
 
-Honest limit: an agent that has a shell on this machine can fake a terminal,
-as with mønømi's --allow-active. The gate is against agents with MCP tools only.
+Each approval is one JSON file, runs/<domain>/<time>/approvals/<rid>.json,
+with every event in it (refusals too), so it's its own audit trail. Times
+are stored in UTC and shown in your local time.
+
+Honest limit: an agent that has a shell on this machine can fake a terminal.
+The gate is against agents with MCP tools only.
 """
 
-import hashlib
 import json
 import os
-import re
-import secrets
-import sys
-import threading
-from datetime import datetime, timedelta
+
+from monomi import research as research_mod
+from monomi import scope as scope_mod
+from monomi.approvalcore import (APPROVAL_TTL, RID, ApprovalError, Store, local_hm,
+                                 now_utc, typed_yes)
 
 from x41 import jobs
 
-REQUEST_TTL = timedelta(hours=1)       # a pending request nobody approved
-APPROVAL_TTL = timedelta(minutes=15)   # an approval nobody used
-ALPHABET = "abcdefghjkmnpqrstuvwxyz23456789"  # no 0/o, 1/l/i: easy to type
-RID = re.compile(r"[a-z2-9]{4}-[a-z2-9]{4}")
-_lock = threading.Lock()  # claim() is check-then-mark: one at a time
+
+def _cmd(rid: str) -> str:
+    return f"`0x41 approve {rid} --scope FILE`"
 
 
-class ApprovalError(ValueError):
-    """Refused; the message says why. Nothing was sent."""
-
-
-def new_rid() -> str:
-    pick = "".join(secrets.choice(ALPHABET) for _ in range(8))
-    return f"{pick[:4]}-{pick[4:]}"
-
-
-def sha256_of(path: str) -> str:
-    with open(path, "rb") as f:
-        return hashlib.sha256(f.read()).hexdigest()
-
-
-def _now(now):
-    return now or datetime.now()
-
-
-def _write(path: str, data: dict) -> None:
-    tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2)
-    os.replace(tmp, path)  # all at once: never half a file
-
-
-def _event(data: dict, now, event: str, **extra) -> None:
-    data.setdefault("events", []).append({"time": now.isoformat(timespec="seconds"), "event": event, **extra})
+def _store(run_dir: str) -> Store:
+    return Store(os.path.join(run_dir, "approvals"), "0x41", _cmd)
 
 
 def find(rid: str, root: str | None = None) -> str:
@@ -82,16 +62,10 @@ def find(rid: str, root: str | None = None) -> str:
     raise ApprovalError(f"no approval request with id {rid}")
 
 
-def _load(rid: str, root: str | None) -> tuple:
-    path = find(rid, root)
-    with open(path, encoding="utf-8") as f:
-        return path, json.load(f)
-
-
-def _refuse(path: str, data: dict, now, why: str):
-    _event(data, now, "refused", reason=why)
-    _write(path, data)
-    raise ApprovalError(why)
+def _locate(rid: str, root: str | None) -> tuple:
+    """(run folder, its store) for an approval id."""
+    run_dir = os.path.dirname(os.path.dirname(find(rid, root)))
+    return run_dir, _store(run_dir)
 
 
 # --- 1. the request (MCP) -----------------------------------------------------
@@ -99,7 +73,6 @@ def _refuse(path: str, data: dict, now, why: str):
 def request(job_id: str, lead_ids: list | None = None, *, root: str | None = None, now=None) -> dict:
     """A pending approval for a finished vet's waiting active leads. Sends
     nothing and takes no scope: the person gives that when approving."""
-    now = _now(now)
     run_dir = jobs.job_dir(job_id, root)
     run_json = os.path.join(run_dir, "run.json")
     if not os.path.isfile(run_json) or not os.path.isfile(os.path.join(run_dir, "scan.json")):
@@ -114,16 +87,10 @@ def request(job_id: str, lead_ids: list | None = None, *, root: str | None = Non
     if unknown:
         raise ApprovalError(f"not active proofs waiting in {job_id}: {unknown} (waiting: {waiting})")
 
-    os.makedirs(os.path.join(run_dir, "approvals"), exist_ok=True)
-    rid = new_rid()
-    data = {"rid": rid, "job_id": job_id, "domain": rec.get("domain"), "lead_ids": wanted,
-            "status": "pending", "created": now.isoformat(timespec="seconds"),
-            "request_expires": (now + REQUEST_TTL).isoformat(timespec="seconds")}
-    _event(data, now, "requested")
-    _write(os.path.join(run_dir, "approvals", rid + ".json"), data)
-    return {"rid": rid, "job_id": job_id, "lead_ids": wanted, "status": "pending",
-            "expires": data["request_expires"],
-            "ask_the_person_to_run": f"0x41 approve {rid} --scope scope.txt"}
+    data = _store(run_dir).create({"job_id": job_id, "domain": rec.get("domain"), "lead_ids": wanted}, now)
+    return {"rid": data["rid"], "job_id": job_id, "lead_ids": wanted, "status": "pending",
+            "expires": data["expires"],
+            "ask_the_person_to_run": f"0x41 approve {data['rid']} --scope scope.txt"}
 
 
 # --- 2. the approval (terminal) -----------------------------------------------
@@ -134,10 +101,13 @@ def default_plan(scan_path: str, scope_path: str) -> dict:
 
 
 def research_problem(path: str) -> str | None:
-    """akashi's own check of a research-header file (None = usable)."""
-    from akashi.cli import _load_research
-    research, problem = _load_research(path)
-    return None if research is not None else (problem or "not usable")
+    """mønømi's check of a research-header file, the one akashi uses too
+    (None = usable)."""
+    try:
+        research_mod.load(path)
+    except research_mod.ResearchError as e:
+        return str(e)
+    return None
 
 
 def show_plan(steps: list, out) -> None:
@@ -154,14 +124,9 @@ def approve(rid: str, scope_path: str, research_path: str | None = None, *, root
             now=None, plan=None, ask=input, interactive=None, out=print) -> int:
     """`0x41 approve RID --scope FILE`: show akashi's plan with every request,
     ask for a typed yes, then lock the approval to exactly that."""
-    now = _now(now)
-    path, data = _load(rid, root)
-    if data["status"] != "pending":
-        raise ApprovalError(f"{rid} is {data['status']}, not pending")
-    if now > datetime.fromisoformat(data["request_expires"]):
-        _refuse(path, data, now, f"{rid} expired before it was approved (ask for a new one)")
-    if not (interactive or (lambda: sys.stdin.isatty()))():
-        _refuse(path, data, now, "approving needs a person at a real terminal (stdin isn't one)")
+    now = now or now_utc()
+    run_dir, store = _locate(rid, root)
+    data = store.pending(rid, now, interactive)
     if not scope_path or not os.path.isfile(scope_path):
         raise ApprovalError(f"scope file not found: {scope_path}")
     if research_path:
@@ -169,7 +134,6 @@ def approve(rid: str, scope_path: str, research_path: str | None = None, *, root
         if problem:
             raise ApprovalError(f"the research header file isn't usable: {problem}")
 
-    run_dir = os.path.dirname(os.path.dirname(path))
     p = (plan or default_plan)(os.path.join(run_dir, "scan.json"), scope_path)
     if p["scope"].get("problem") or not p["scope"].get("loaded"):
         raise ApprovalError(f"the scope file can't be used: {p['scope'].get('problem') or 'not loaded'}")
@@ -184,22 +148,19 @@ def approve(rid: str, scope_path: str, research_path: str | None = None, *, root
         return 1
     out(f"\nThis approval is good for one run of these {len(ready)} proof(s), within "
         f"{int(APPROVAL_TTL.total_seconds() // 60)} minutes, and only while the scope file stays as it is now.")
-    if ask("Type yes to approve, anything else to cancel: ").strip().lower() != "yes":
+    if not typed_yes(ask, "Type yes to approve, anything else to cancel: "):
         out("Not approved. Nothing will run.")
-        return 1
+        return 1  # stays pending: the person can run approve again within the hour
 
-    data.update({
-        "status": "approved", "approved_at": now.isoformat(timespec="seconds"),
-        "expires": (now + APPROVAL_TTL).isoformat(timespec="seconds"),
+    scope = scope_mod.load(scope_path)
+    data = store.lock_in(data, {
         "approved_ids": [s["id"] for s in ready],
         "requests": {s["id"]: list(s["requests"]) for s in ready},
-        "scope": {"path": os.path.realpath(scope_path), "sha256": sha256_of(scope_path)},
-        "research": ({"path": os.path.realpath(research_path), "sha256": sha256_of(research_path)}
-                     if research_path else None),
-    })
-    _event(data, now, "approved", by="terminal")
-    _write(path, data)
-    out(f"Approved. Claude can now run it once with prove_run (id {rid}), until {data['expires'][11:16]}.")
+        "scope": {"path": os.path.realpath(scope_path), "sha256": scope.sha256},
+        "research": ({"path": os.path.realpath(research_path),
+                      "sha256": research_mod.load(research_path).sha256} if research_path else None),
+    }, now, by="terminal")
+    out(f"Approved. Claude can now run it once with prove_run (id {rid}), until {local_hm(data['expires'])}.")
     return 0
 
 
@@ -209,35 +170,27 @@ def claim(rid: str, *, root: str | None = None, now=None, plan=None) -> dict:
     """Every check again, then mark the approval used BEFORE returning it, so
     it can't run twice even if the run crashes. Returns what to run:
     scan path, scope path, research path, approved ids."""
-    now = _now(now)
-    with _lock:
-        path, data = _load(rid, root)
-        status = data["status"]
-        if status == "pending":
-            _refuse(path, data, now, f"{rid} hasn't been approved yet: the person runs "
-                    f"`0x41 approve {rid} --scope FILE` in a terminal first")
-        if status != "approved":
-            _refuse(path, data, now, f"{rid} was already {status}: an approval runs once (ask for a new one)")
-        if now > datetime.fromisoformat(data["expires"]):
-            data["status"] = "expired"
-            _refuse(path, data, now, f"{rid} expired at {data['expires'][11:16]} (ask for a new one)")
-        for name in ("scope", "research"):
-            pinned = data.get(name)
-            if pinned and (not os.path.isfile(pinned["path"]) or sha256_of(pinned["path"]) != pinned["sha256"]):
-                _refuse(path, data, now, f"the {name} file changed or is missing since it was approved: "
-                        "nothing runs (approve again)")
-        run_dir = os.path.dirname(os.path.dirname(path))
-        scan = os.path.join(run_dir, "scan.json")
+    run_dir, store = _locate(rid, root)
+    scan = os.path.join(run_dir, "scan.json")
+
+    def check(data):
+        """0x41's last look: the pinned files, then akashi's plan as it is now."""
+        _, problem = scope_mod.check_pinned(data["scope"]["path"], data["scope"]["sha256"], fix=_cmd(rid))
+        if problem:
+            return f"scope file: {problem}"
+        if data.get("research"):
+            _, problem = research_mod.check_pinned(data["research"]["path"], data["research"]["sha256"],
+                                                   fix=f"`0x41 approve {rid} --scope FILE --research FILE`")
+            if problem:
+                return f"research file: {problem}"
         p = (plan or default_plan)(scan, data["scope"]["path"])
         now_requests = {s["id"]: list(s["requests"]) for s in p["steps"]
                         if s["id"] in data["approved_ids"] and s["active"] and s["ready"]}
         if now_requests != data["requests"]:
-            _refuse(path, data, now, "akashi's plan no longer matches what was approved: nothing runs (approve again)")
+            return "akashi's plan no longer matches what was approved: nothing runs (approve again)"
+        return None
 
-        data["status"] = "used"
-        data["used_at"] = now.isoformat(timespec="seconds")
-        _event(data, now, "claimed")
-        _write(path, data)
+    data = store.claim(rid, now, check)
     return {"rid": rid, "job_id": data["job_id"], "run_dir": run_dir, "scan": scan,
             "scope": data["scope"]["path"], "research": (data.get("research") or {}).get("path"),
             "approved_ids": data["approved_ids"], "requests": data["requests"]}
@@ -245,11 +198,8 @@ def claim(rid: str, *, root: str | None = None, now=None, plan=None) -> dict:
 
 def record_result(rid: str, result: dict, *, root: str | None = None, now=None) -> None:
     """Note the run's outcome in the approval's own history."""
-    now = _now(now)
-    with _lock:
-        path, data = _load(rid, root)
-        if result.get("error"):
-            _event(data, now, "failed", error=result["error"])
-        else:
-            _event(data, now, "ran", tally=result.get("tally"), skipped=result.get("skipped"))
-        _write(path, data)
+    _, store = _locate(rid, root)
+    if result.get("error"):
+        store.note(rid, "failed", now, error=result["error"])
+    else:
+        store.note(rid, "ran", now, tally=result.get("tally"), skipped=result.get("skipped"))

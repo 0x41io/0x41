@@ -8,7 +8,7 @@ the real ones.
 
 import asyncio
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 
 import pytest
 
@@ -77,7 +77,7 @@ def test_the_whole_flow_runs_once(lab, capsys):
     assert asked["ask_the_person_to_run"] == f"0x41 approve {rid} --scope scope.txt"
     assert lab["sent"] == []  # asking sends nothing
 
-    refused("prove_run", {"rid": rid}, "hasn't been approved yet")  # the agent can't skip the person
+    refused("prove_run", {"rid": rid}, "approve it first")  # the agent can't skip the person
     assert lab["sent"] == []
 
     assert person_approves(rid, lab["scope"]) == 0
@@ -92,7 +92,7 @@ def test_the_whole_flow_runs_once(lab, capsys):
     refused("prove_run", {"rid": rid}, "already used")  # once only
     assert len(lab["sent"]) == 1
     events = [e["event"] for e in json.loads(open(approvals.find(rid)).read())["events"]]
-    assert events == ["requested", "refused", "approved", "claimed", "ran", "refused"]
+    assert events == ["requested", "refused", "approved", "used", "ran", "refused"]
 
 
 def test_prove_run_refuses_an_edited_scope_file(lab):
@@ -106,7 +106,7 @@ def test_prove_run_refuses_an_edited_scope_file(lab):
 
 def test_prove_run_refuses_an_expired_approval(lab):
     rid = call("prove_request", {"job_id": JOB})["rid"]
-    person_approves(rid, lab["scope"], now=datetime(2020, 1, 1, 12, 0, 0))  # long ago
+    person_approves(rid, lab["scope"], now=datetime(2020, 1, 1, 12, 0, 0, tzinfo=timezone.utc))  # long ago
     refused("prove_run", {"rid": rid}, "expired")
     assert lab["sent"] == []
 
@@ -132,4 +132,4 @@ def test_a_failed_run_uses_up_the_approval_and_says_so(lab, monkeypatch):
     person_approves(rid, lab["scope"])
     refused("prove_run", {"rid": rid}, "the run failed.*network unreachable.*used up")
     data = json.loads(open(approvals.find(rid)).read())
-    assert data["status"] == "used" and data["events"][-1]["event"] == "failed"
+    assert data["state"] == "used" and data["events"][-1]["event"] == "failed"
