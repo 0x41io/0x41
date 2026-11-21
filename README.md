@@ -97,6 +97,9 @@ Then fully quit and reopen the Claude app. The tools:
 | `explain_cves(ids)` | kaidoku's CVE lookup: NVD, EPSS, CISA KEV and a verdict, up to 5 per call |
 | `prove_request(job_id, lead_ids?)` | asks you to approve a vet's waiting active proofs; sends nothing, returns an approval id |
 | `prove_run(rid)` | **ACTIVE**: runs what you approved, once |
+| `list_cases()` | the app-check cases you've set up in `cases/` (names, hosts, resources; nothing secret) |
+| `app_request(case, kind?)` | asks you to approve one app check (`verify`, or `recheck` after a fix); sends nothing, returns an approval id |
+| `app_run(rid)` | **ACTIVE**: runs the app check you approved, once, logged in as your own test accounts |
 
 ### Active proofs from Claude: you approve them in your terminal
 
@@ -116,11 +119,25 @@ An approval covers one vet, the leads listed, the exact requests shown, and the 
 
 The approvals use mønømi's approvals core (`monomi.approvalcore`), the same code that gates mønømi's own active checks, so every 0x41 approval gate shares one tested copy.
 
+### App checks from Claude (since v0.7)
+
+akashi's app-logic checks (since akashi v0.3: can one of your own test accounts read another's resource?) run the same way. You write the case files yourself, into 0x41's `cases/` folder (`cases/notes-idor.toml`, the format akashi's `app` commands use). Claude can only **name** a case: it can't supply a file, a target or credentials.
+
+1. Claude calls `app_request` with a case name (and `kind="recheck"` after a fix). Nothing is sent.
+2. **You** run, in your own terminal:
+   ```bash
+   0x41 approve k7m2-x9pq --scope scope.txt --creds ~/.config/0x41/akashi-creds.json
+   ```
+   It shows every request the check would send and waits for your typed `yes`. The creds file is refused unless only you can read it (`chmod 600`), and passwords are never shown or returned.
+3. Claude calls `app_run` with the id: akashi's verdict with kaidoku's explanation, and for a recheck, fixed / still open / unclear.
+
+The approval pins the case file, the scope file and the creds file (sha256) and the exact requests; if any of them changes before the run, `app_run` refuses and nothing is sent. Approvals live in `app-approvals/<id>.json` and each run's result in `app-runs/<id>/` (all gitignored, with `cases/`).
+
 Why not a confirmation popup in the Claude app (MCP "elicitation")? It was tested on 2026-11-16 and the app doesn't support it (it answers `Method not found`), and other clients have been reported to accept such prompts without showing them. A terminal yes can't be faked by the model.
 
 What it never does:
 
-- **Active proofs without you.** No tool takes a scope file, a research file or a yes, and every vet runs with `--no-active`. Active proofs run only through `prove_run`, after your typed `yes` in a terminal.
+- **Active proofs without you.** No tool takes a scope file, a research file, credentials or a yes, and every vet runs with `--no-active`. Active proofs and app checks run only through `prove_run` / `app_run`, after your typed `yes` in a terminal.
 - **AI briefings.** In a chat, Claude is already the explainer, so kaidoku runs without them here (nothing is billed to your Anthropic API key).
 - **Read other files.** Job ids only reach folders inside `runs/`, and `hosts_file` must be a `.txt` inside mønømi's scans folder.
 

@@ -73,12 +73,14 @@ def stand_in_start(monkeypatch, script="import time; time.sleep(30)"):
 
 # --- the tools on offer -----------------------------------------------------
 
-def test_six_tools_and_none_takes_a_scope_or_a_yes():
+def test_nine_tools_and_none_takes_a_scope_creds_path_or_a_yes():
     tools = {t.name: t for t in asyncio.run(mcp_server.mcp.list_tools())}
-    assert set(tools) == {"vet_start", "vet_status", "list_vets", "explain_cves", "prove_request", "prove_run"}
+    assert set(tools) == {"vet_start", "vet_status", "list_vets", "explain_cves", "prove_request", "prove_run",
+                          "list_cases", "app_request", "app_run"}
     for t in tools.values():
         params = set((t.input_schema or {}).get("properties", {}))
-        assert not params & {"scope", "scope_file", "active", "yes", "approve", "approved_ids", "ai"}, t.name
+        assert not params & {"scope", "scope_file", "active", "yes", "approve", "approved_ids", "ai",
+                             "creds", "creds_file", "password", "case_file", "path", "url", "target"}, t.name
     assert tools["vet_status"].annotations.read_only_hint is True
     assert tools["list_vets"].annotations.read_only_hint is True
     assert tools["vet_start"].annotations.destructive_hint is False
@@ -88,6 +90,13 @@ def test_six_tools_and_none_takes_a_scope_or_a_yes():
     assert run.description.lstrip().startswith("ACTIVE") and run.annotations.title.startswith("ACTIVE")
     assert run.annotations.read_only_hint is False and run.annotations.open_world_hint is True
     assert tools["prove_request"].annotations.open_world_hint is False
+    app = tools["app_run"]
+    assert set(app.input_schema["properties"]) == {"rid"}  # the approval id, nothing else
+    assert app.description.lstrip().startswith("ACTIVE") and app.annotations.title.startswith("ACTIVE")
+    assert app.annotations.read_only_hint is False and app.annotations.open_world_hint is True
+    assert set(tools["app_request"].input_schema["properties"]) == {"case", "kind"}  # a name, not a file
+    assert tools["app_request"].annotations.open_world_hint is False
+    assert tools["list_cases"].annotations.read_only_hint is True
 
 
 # --- vet_start --------------------------------------------------------------

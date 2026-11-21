@@ -305,6 +305,87 @@ def prove_run(rid: str) -> dict:
             "note": UNTRUSTED}
 
 
+@mcp.tool(annotations=ToolAnnotations(title="List app-check cases", readOnlyHint=True, openWorldHint=False))
+def list_cases() -> dict:
+    """The app-logic cases the person has set up (files in 0x41's cases/
+    folder): each case name with its host, resource and the two test accounts
+    it compares. Reads files only. Pass a case name to app_request."""
+    from x41 import app_approvals
+    return {"cases": app_approvals.list_cases(), "folder": app_approvals.cases_dir(), "note": UNTRUSTED}
+
+
+@mcp.tool(annotations=ToolAnnotations(
+    title="Ask for approval of an app check",
+    readOnlyHint=False,      # it writes a pending approval file...
+    destructiveHint=False,   # ...and sends nothing
+    openWorldHint=False))
+def app_request(case: str, kind: str = "verify") -> dict:
+    """Ask the person to approve one app-logic check (akashi): can one of
+    their own test accounts read another's resource? case: a name from
+    list_cases (you can't supply a file, a target or credentials). kind:
+    "verify" proves it; "recheck" re-runs a confirmed one after its fix.
+    Sends nothing. Returns an approval id and the command the person runs in
+    their own terminal: `0x41 approve <id> --scope scope.txt --creds FILE`.
+    That shows them every request and needs their typed yes; then call
+    app_run with the id. Tell the person what you're asking for and why.
+    An unapproved request expires after 1 hour."""
+    from x41 import app_approvals
+    try:
+        return app_approvals.request(case, kind)
+    except app_approvals.ApprovalError as e:
+        raise ToolError(str(e)) from None
+
+
+@mcp.tool(annotations=ToolAnnotations(
+    title="ACTIVE: run an approved app check",
+    readOnlyHint=False,      # it logs in to the target with the person's test accounts...
+    destructiveHint=False,   # ...and only reads (GET), within the approved scope
+    idempotentHint=False,
+    openWorldHint=True))
+def app_run(rid: str) -> dict:
+    """ACTIVE: sends requests to the target, logged in as the person's own
+    test accounts. Runs the app check the person approved in a terminal,
+    once: only the exact requests they were shown, inside their scope file,
+    within 15 minutes of approving. Refused if not approved yet, expired,
+    already used, or if the case, scope or creds file or akashi's plan
+    changed since. Returns akashi's verdict with kaidoku's explanation (and,
+    for a recheck, fixed / still_open / unclear). Passwords never appear;
+    akashi keeps only a fingerprint of the response, never the data."""
+    from akashi import api as akashi_api
+    from kaidoku import api as kaidoku_api
+    from x41 import app_approvals
+    from x41 import vet as vet_mod
+    try:
+        job = app_approvals.claim(rid)  # every check, then marked used before anything is sent
+    except app_approvals.ApprovalError as e:
+        raise ToolError(str(e)) from None
+    folder = app_approvals.runs_dir(rid)
+    os.makedirs(folder, exist_ok=True)
+    try:
+        with contextlib.redirect_stdout(sys.stderr):  # stdout is the MCP channel
+            out = akashi_api.prove_app(job["case_file"], job["scope"], job["creds"], kind=job["kind"],
+                                       research_path=job["research"], via="mcp", approval=rid)
+            vet_mod.write_verdicts(os.path.join(folder, "verdicts.jsonl"), out["target"], out["verdicts"])
+            # explain from akashi's whole proof history, so a recheck reads
+            # confirmed -> fixed; keep only this case's finding (its key)
+            keys = {v.get("key") for v in out["verdicts"]}
+            history = out.get("history") or os.path.join(folder, "verdicts.jsonl")
+            leads = [d for d in kaidoku_api.explain_history(history)["leads"] if d.get("key") in keys] \
+                if out["verdicts"] else []
+    except Exception as e:  # the approval is used up either way; say what happened
+        app_approvals.record_result(rid, {"error": f"{type(e).__name__}: {e}"[:300]})
+        raise ToolError(f"the run failed ({type(e).__name__}: {e}); approval {rid} is used up") from None
+    full = {**out, "rid": rid, "case": job["case"], "leads": leads}
+    with open(os.path.join(folder, "result.json"), "w", encoding="utf-8") as f:
+        json.dump(full, f, indent=2)
+    app_approvals.record_result(rid, out)
+    return {"rid": rid, "case": job["case"], "kind": job["kind"], "target": out["target"],
+            "tally": out["tally"], "transition": out.get("transition"),
+            "findings": [_finding(d) for d in leads[:LIST_CAP]],
+            "requests_approved": job["requests"],
+            "saved": os.path.join(folder, "result.json"), "note": UNTRUSTED}
+
+
 def main(argv=None) -> None:
     argparse.ArgumentParser(prog="0x41 mcp", description="0x41 MCP server (talks over stdin/stdout)").parse_args(argv)
     # stderr, never stdout: stdout carries the MCP messages

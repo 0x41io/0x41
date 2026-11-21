@@ -8,6 +8,7 @@ The 0x41 command line.
     0x41 mcp setup                              add it to the Claude desktop app's config
     0x41 mcp keys                               save this terminal's OTX / NVD keys for it (600 file)
     0x41 approve RID --scope scope.txt          approve active proofs Claude asked for (typed yes)
+    0x41 approve RID --scope FILE --creds FILE  ...or an app check Claude asked for (app_request)
     0x41 diff example.com                       what changed between its last two runs (read-only)
     0x41 diff RUN_DIR RUN_DIR                   ...or between two run folders you pick
 """
@@ -38,6 +39,8 @@ def build_parser() -> argparse.ArgumentParser:
     a.add_argument("--scope", metavar="FILE", required=True,
                    help="scope file (mønømi's format): only hosts it allows are touched")
     a.add_argument("--research", metavar="FILE", help="research header file (sent on active requests)")
+    a.add_argument("--creds", metavar="FILE",
+                   help="app checks only: your test accounts' logins (JSON, chmod 600); never shown")
     d = sub.add_parser("diff", help="what changed between two vet runs, and which changes matter (read-only)")
     d.add_argument("runs", nargs="+", metavar="DOMAIN_OR_RUN",
                    help="a domain (its last two runs), or two run folders")
@@ -92,8 +95,12 @@ def main(argv=None) -> int:
         return run_diff(args)   # before the banner, so --json output is pure JSON
     print(f"[0x41] {__version__} · mønømi finds · akashi proves · kaidoku explains")
     if args.command == "approve":
-        from x41 import approvals
+        from x41 import app_approvals, approvals
         try:
+            if app_approvals.is_app(args.rid):
+                return app_approvals.approve(args.rid, args.scope, args.creds, args.research)
+            if args.creds:
+                raise approvals.ApprovalError("--creds is only for app checks; this id is a vet's active proofs")
             return approvals.approve(args.rid, args.scope, args.research)
         except approvals.ApprovalError as e:
             print(f"0x41: {e}", file=sys.stderr)

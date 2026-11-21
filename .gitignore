@@ -20,3 +20,8 @@ scope.txt
 # Secrets
 .env
 .env.*
+
+# App checks: your case files (they name targets), approvals and results
+cases/
+app-approvals/
+app-runs/
