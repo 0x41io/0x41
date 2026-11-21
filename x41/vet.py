@@ -110,6 +110,24 @@ def show_verdicts(verdicts: list) -> None:
         print(f"         {v['id']:<4} {v['rule']:<16} {marks.get(v['status'], v['status'])}")
 
 
+def gate_notes(scan_path: str) -> dict:
+    """{id: notes} for every path and lead in mønømi's scan that its gate
+    labeled: the program notes (gate.PROGRAM_NOTES, e.g. email spoofing is
+    often out of scope) and the scope cautions (beta, staging... hosts).
+    A note never changes a verdict; it's carried so the person sees it
+    next to the finding. Label, don't hide."""
+    with open(scan_path, encoding="utf-8") as f:
+        scan = json.load(f)
+    built = (scan.get("paths") if isinstance(scan, dict) else None) or {}
+    out = {}
+    for group in ("paths", "leads"):
+        for item in built.get(group) or []:
+            notes = (item.get("gate") or {}).get("notes") or []
+            if notes and item.get("id"):
+                out[item["id"]] = list(notes)
+    return out
+
+
 def write_verdicts(path: str, target: str, verdicts: list) -> None:
     """This vet's verdicts, in akashi's own history format, so kaidoku reads
     them exactly like a proof history (one file for this vet only)."""
@@ -194,11 +212,15 @@ def vet(domain: str, *, scope: str | None = None, ai: bool = False, active: bool
                                   for s in ready]
 
     # Active proofs that didn't run keep what they would have sent, so the
-    # MCP server can show it (the report lists them by reason).
+    # MCP server can show it (the report lists them by reason), and akashi's
+    # one-line summary, which names the hosts (and origin IP) the lead is about.
     would_send = {s["id"]: s.get("requests") or [] for s in act}
+    summaries = {s["id"]: s.get("summary") for s in act}
     for n in rec["not_proven"]:
         if n["id"] in would_send:
             n["active"], n["would_send"] = True, would_send[n["id"]]
+        if summaries.get(n["id"]):
+            n["summary"] = summaries[n["id"]]
 
     # 4. kaidoku: explain every finding, and the CVEs mønømi saw
     step(4, "kaidoku", "explaining" + (" (AI briefings)" if ai else ""))
@@ -206,6 +228,10 @@ def vet(domain: str, *, scope: str | None = None, ai: bool = False, active: bool
         verdicts_path = os.path.join(run_dir, "verdicts.jsonl")
         write_verdicts(verdicts_path, target, rec["verdicts"])
         rec["leads"] = tools.explain_history(verdicts_path, ai=ai)["leads"]
+        notes = gate_notes(scan_path)
+        for lead in rec["leads"]:
+            if notes.get(lead.get("id")):
+                lead["notes"] = notes[lead["id"]]
         print(f"         {len(rec['leads'])} finding(s) explained")
     else:
         print("         no findings to explain")

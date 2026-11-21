@@ -33,6 +33,8 @@ Report: runs/example.com/2026-11-16_183000/report.md
 
 The report (`report.md`) has a summary table, each finding with its proof, fix and owner, the CVEs, and a **Not proven** list: active proofs that didn't run and leads akashi doesn't prove yet, each with the reason. Nothing is dropped silently.
 
+Since v0.8, an active proof that didn't run also says what it's about, in akashi's words ("would check whether www.example.com can be reached directly at the origin 203.0.113.7, around the CDN"), so you never have to open `scan.json` to find out which hosts "L4" means. And a finding carries mønømi's notes from its validation gate, such as "email spoofing is often out of scope for bug bounty programs: check the program's rules", or a caution that it runs through a staging or beta host. A note is a label, never a filter: the finding and its verdict stay exactly as akashi decided them.
+
 ## Install
 
 Requires Python 3.14 (mønømi needs it).
@@ -92,7 +94,7 @@ Then fully quit and reopen the Claude app. The tools:
 | Tool | What it does |
 |---|---|
 | `vet_start(domain, hosts_file?)` | starts a passive vet in the background and returns a job id at once (a vet takes 1-3 minutes) |
-| `vet_status(job_id, detail?)` | running, failed (with the end of its log), or done: the tally, each finding with akashi's verdict, proof, fix and owner, what wasn't proven and why, active proofs waiting, the CVEs mønømi saw. `detail="full"` adds the whole report |
+| `vet_status(job_id, detail?)` | running, failed (with the end of its log), or done: the tally, each finding with akashi's verdict, proof, fix, owner and mønømi's `notes`, what wasn't proven and why (with akashi's `summary` naming its hosts), active proofs waiting, the CVEs mønømi saw. `detail="full"` adds the whole report |
 | `list_vets(domain?)` | earlier vets, newest first, including ones run from the terminal |
 | `explain_cves(ids)` | kaidoku's CVE lookup: NVD, EPSS, CISA KEV and a verdict, up to 5 per call |
 | `prove_request(job_id, lead_ids?)` | asks you to approve a vet's waiting active proofs; sends nothing, returns an approval id |

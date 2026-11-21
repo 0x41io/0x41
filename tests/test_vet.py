@@ -26,8 +26,10 @@ def lead(id_, rule, state, label, **kw):
 class Fake:
     """Records every call; the real tools never run."""
 
-    def __init__(self, *, scope_ok=True, answer="yes", interactive=True, scan_code=0, cve_ids=()):
+    def __init__(self, *, scope_ok=True, answer="yes", interactive=True, scan_code=0, cve_ids=(),
+                 scan_json=None):
         self.calls, self.prompts = [], []
+        self.scan_json = scan_json or {}
         self.scope_ok, self.answer, self.is_tty = scope_ok, answer, interactive
         self.scan_code, self.cve_ids = scan_code, list(cve_ids)
 
@@ -42,7 +44,7 @@ class Fake:
     def scan(self, domain, path, hosts):
         self.calls.append(("scan", domain, hosts))
         if self.scan_code == 0:
-            open(path, "w").write("{}")
+            open(path, "w").write(json.dumps(self.scan_json))
         return self.scan_code
 
     def plan(self, scan, scope):
@@ -54,7 +56,9 @@ class Fake:
                      "summary": "re-check email", "requests": []},
                     {"id": "L2", "rule": "around_cdn", "active": True, "ready": ready,
                      "blocked": "" if ready else "no scope file given",
-                     "summary": "check the origin", "requests": ["GET https://www.example.test/"]}],
+                     "summary": "check whether www.example.test can be reached directly at the origin "
+                                "198.51.100.7, around the CDN",
+                     "requests": ["GET https://www.example.test/"]}],
                 "unhandled": [{"id": "L3", "rule": "side_door", "where": "lead"}]}
 
     def prove_passive(self, scan):
@@ -222,3 +226,56 @@ def test_the_domain_is_cleaned_the_way_monomi_cleans_it(tmp_path):
                 now=datetime(2026, 11, 16, 1, 0, 0))
     assert fake.calls[0] == ("scan", "example.test", None)  # monomi gets the clean name
     assert (tmp_path / "example.test" / "2026-11-16_010000" / "report.md").exists()  # folder matches it
+
+
+# --- v0.8: leads name their hosts, findings carry mønømi's notes ---------------------
+
+EMAIL_NOTE = ("missing or weak DMARC / email spoofing is often out of scope for bug bounty "
+              "programs: check the program's rules")
+SCAN_WITH_NOTES = {"paths": {
+    "paths": [{"id": "P1", "rule": "email_spoofing", "gate": {"result": "finding", "notes": [EMAIL_NOTE]}}],
+    "leads": [{"id": "L2", "rule": "around_cdn", "gate": {"result": "lead", "notes": []}}]}}
+
+
+def test_not_proven_keeps_akashis_summary_naming_the_hosts(tmp_path):
+    fake = Fake()
+    code, run_dir = go(tmp_path, fake)        # no scope: L2 can't run
+    saved = json.loads((run_dir / "run.json").read_text())
+    l2 = next(n for n in saved["not_proven"] if n["id"] == "L2")
+    assert "www.example.test" in l2["summary"] and "198.51.100.7" in l2["summary"]
+    text = (run_dir / "report.md").read_text()
+    assert ("**L2** around_cdn: no scope file given. Would check whether www.example.test can be "
+            "reached directly at the origin 198.51.100.7, around the CDN") in text
+
+
+def test_every_way_an_active_proof_is_skipped_keeps_the_summary(tmp_path):
+    for kw in ({"answer": "no"}, {"interactive": False}):
+        fake = Fake(**kw)
+        _, run_dir = go(tmp_path, fake, scope="scope.txt")
+        l2 = next(n for n in json.loads((run_dir / "run.json").read_text())["not_proven"] if n["id"] == "L2")
+        assert "www.example.test" in l2["summary"]
+    _, run_dir = go(tmp_path, Fake(), scope="scope.txt", active=False)
+    l2 = next(n for n in json.loads((run_dir / "run.json").read_text())["not_proven"] if n["id"] == "L2")
+    assert l2["reason"] == "skipped: --no-active" and "www.example.test" in l2["summary"]
+
+
+def test_findings_carry_monomis_gate_notes(tmp_path):
+    fake = Fake(scan_json=SCAN_WITH_NOTES)
+    _, run_dir = go(tmp_path, fake, scope="scope.txt")
+    leads = {d["id"]: d for d in json.loads((run_dir / "run.json").read_text())["leads"]}
+    assert leads["P1"]["notes"] == [EMAIL_NOTE]
+    assert leads["P1"]["state"] == "open"          # labeled, never hidden or changed
+    assert "notes" not in leads["L2"]              # no note, no key
+    text = (run_dir / "report.md").read_text()
+    assert f"**Note (mønømi):** {EMAIL_NOTE}" in text
+    assert text.count("**Note (mønømi):**") == 1
+
+
+def test_gate_notes_reads_paths_and_leads(tmp_path):
+    scan = {"paths": {"paths": [{"id": "P1", "gate": {"notes": ["a"]}}],
+                      "leads": [{"id": "L4", "gate": {"notes": ["b", "c"]}}, {"id": "L5", "gate": {}}]}}
+    path = tmp_path / "scan.json"
+    path.write_text(json.dumps(scan))
+    assert vet_mod.gate_notes(str(path)) == {"P1": ["a"], "L4": ["b", "c"]}
+    path.write_text("{}")
+    assert vet_mod.gate_notes(str(path)) == {}

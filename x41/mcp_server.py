@@ -99,7 +99,7 @@ def vet_start(domain: str, hosts_file: str | None = None) -> dict:
 
 
 def _finding(lead: dict) -> dict:
-    keep = ("id", "name", "state", "label", "headline", "owner", "fix", "reason")
+    keep = ("id", "name", "state", "label", "headline", "owner", "fix", "reason", "notes")
     out = {k: lead[k] for k in keep if lead.get(k)}
     evidence = lead.get("evidence") or []
     out["evidence"] = evidence[:EVIDENCE_CAP]
@@ -115,12 +115,22 @@ def _cve_row(r: dict) -> dict:
             "kev": bool(c.get("kev")), "found_on": [loc.get("ip") for loc in r.get("found_on") or []]}
 
 
+def _not_proven(n: dict) -> dict:
+    """A lead that wasn't proven, with akashi's summary when the vet kept one:
+    it names the hosts the lead is about, so "L4 around_cdn" alone never
+    leaves the reader guessing which server it means."""
+    out = {"id": n.get("id"), "rule": n.get("rule"), "reason": n.get("reason")}
+    if n.get("summary"):
+        out["summary"] = n["summary"]
+    return out
+
+
 def _waiting(n: dict) -> dict:
     """An active proof that didn't run. akashi lists its exact requests only
     once a scope file allows the hosts (which name reaches the origin depends
     on the scope), so without one there's no list: say so instead of showing
     an empty one, which would read as "sends nothing"."""
-    out = {"id": n.get("id"), "rule": n.get("rule"), "reason": n.get("reason")}
+    out = _not_proven(n)
     if n.get("would_send"):
         out["would_send"] = n["would_send"]
     else:
@@ -142,8 +152,7 @@ def vet_summary(st: dict) -> dict:
         "job_id": st["job_id"], "domain": st["domain"], "status": "done", "started": st.get("started"),
         "tally": report.tally(rec), "versions": rec.get("versions"),
         "findings": [_finding(d) for d in leads[:LIST_CAP]],
-        "not_proven": [{"id": n.get("id"), "rule": n.get("rule"), "reason": n.get("reason")}
-                       for n in not_proven[:LIST_CAP]],
+        "not_proven": [_not_proven(n) for n in not_proven[:LIST_CAP]],
         "not_provable_yet": [{"id": u.get("id"), "rule": u.get("rule")}
                              for u in (rec.get("unhandled") or [])[:LIST_CAP]],
         "report_file": st.get("report"),
@@ -169,8 +178,11 @@ def vet_summary(st: dict) -> dict:
 def vet_status(job_id: str, detail: str = "summary") -> dict:
     """Where a vet stands: running (seconds so far, end of its log), failed
     (end of its log says why), or done. Done with detail="summary" (default):
-    the tally, each finding with akashi's verdict, proof, fix and owner,
-    what wasn't proven and why, active proofs waiting for a person, and the
+    the tally, each finding with akashi's verdict, proof, fix and owner
+    (plus mønømi's "notes", e.g. that email spoofing is often out of scope
+    for bug bounty programs: a label to check the program's rules, never a
+    change to the verdict), what wasn't proven and why (with akashi's
+    "summary" naming its hosts), active proofs waiting for a person, and the
     CVEs mønømi saw. detail="full" adds the whole Markdown report.
     akashi decided every verdict from evidence; explanations must not change
     one. Reads files only; sends nothing."""

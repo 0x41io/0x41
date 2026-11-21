@@ -42,6 +42,8 @@ def _finding(lead: dict) -> list:
     from kaidoku.akashi_import import next_step, when
     out = [f"### {md(lead['id'])} · {md(lead['name'])}: **{lead['label']}**", "",
            f"> {md(lead['headline'])}", ""]
+    for note in lead.get("notes") or []:
+        out += [f"**Note (mønømi):** {md(note)}", ""]
     steps = " → ".join(f"{t['word']} ({when(t['checked_at'])})" for t in lead.get("timeline") or [])
     if steps:
         out += [f"**History:** {steps}", ""]
@@ -112,7 +114,8 @@ def markdown(rec: dict) -> str:
     unhandled = rec.get("unhandled") or []
     if not_proven or unhandled:
         out += ["## Not proven", "", "Listed so nothing is dropped silently.", ""]
-        out += [f"- **{md(n['id'])}** {md(n['rule'])}: {md(n['reason'])}" for n in not_proven]
+        out += [f"- **{md(n['id'])}** {md(n['rule'])}: {md(n['reason'])}"
+                + (f". Would {md(n['summary'])}" if n.get("summary") else "") for n in not_proven]
         out += [f"- **{md(u['id'])}** {md(u['rule'])}: akashi doesn't prove this kind of lead yet"
                 for u in unhandled]
         out.append("")

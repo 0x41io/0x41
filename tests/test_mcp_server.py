@@ -310,3 +310,33 @@ def test_vet_keeps_what_waiting_active_proofs_would_send(tmp_path):
     rec = json.loads((tmp_path / "example.test" / "2026-11-16_010000" / "run.json").read_text())
     l2 = next(n for n in rec["not_proven"] if n["id"] == "L2")
     assert l2["active"] is True and l2["would_send"] == ["GET https://www.example.test/"]
+
+
+# --- v0.8: leads name their hosts, findings carry mønømi's notes ---------------------
+
+SUMMARY = "check whether www.example.test can be reached directly at the origin 198.51.100.7, around the CDN"
+NOTE = ("missing or weak DMARC / email spoofing is often out of scope for bug bounty "
+        "programs: check the program's rules")
+
+
+def test_not_proven_and_waiting_name_their_hosts(homes):
+    rec = {**RECORD, "not_proven": [{**RECORD["not_proven"][0], "summary": SUMMARY}]}
+    finished_vet(homes, rec)
+    out = call("vet_status", {"job_id": JOB})
+    assert out["not_proven"][0]["summary"] == SUMMARY
+    assert out["active_proofs_waiting"][0]["summary"] == SUMMARY
+    assert out["active_proofs_waiting"][0]["would_send"] == RECORD["not_proven"][0]["would_send"]
+
+
+def test_older_runs_without_a_summary_still_read(homes):
+    finished_vet(homes)
+    out = call("vet_status", {"job_id": JOB})
+    assert "summary" not in out["not_proven"][0] and "summary" not in out["active_proofs_waiting"][0]
+
+
+def test_findings_carry_the_note_and_keep_their_verdict(homes):
+    lead = {**RECORD["leads"][0], "notes": [NOTE]}
+    finished_vet(homes, {**RECORD, "leads": [lead]})
+    p1 = call("vet_status", {"job_id": JOB})["findings"][0]
+    assert p1["notes"] == [NOTE]
+    assert p1["label"] == "CONFIRMED" and p1["state"] == "open"
