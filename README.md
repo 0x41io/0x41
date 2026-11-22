@@ -46,6 +46,8 @@ Since v0.10.0 (mønømi v1.24.0, akashi v0.4.0):
 - **Bug bounty programs.** Put a program's scope list in `programs/NAME.txt` (0x41's data folder, mønømi's scope format: `example.com`, `*.example.com`, `!excluded.example.com`) and run `0x41 vet example.com --program NAME`, or pass `--scope FILE` as before. The scope now reaches mønømi's scan too: hosts it doesn't allow are set aside with the rule named, instead of becoming leads, and its exact in-scope hosts under the domain are checked as extra hosts, so hosts certificate logs never show (behind a wildcard certificate) aren't missed. From Claude, `vet_start` takes the program's name (`list_programs` shows them), never a file or a path, and those vets stay passive.
 - **One "go around the CDN" lead per CDN.** mønømi lists every origin candidate in one lead, ranked, and akashi tries them in one approval: confirmed if any origin serves the site, ruled out only if none does.
 
+Since v0.10.1 (akashi v0.5.0), the app-logic checks akashi runs for a vet work against ordinary session-cookie web apps (set `login.session = "cookie"` in a case), not only JSON-token APIs, and there is a second check type, `privileged_function` — can a low-privilege account reach an admin-only endpoint? Both are driven by the case files in `cases/` and run the same way: named only, after your typed yes in a terminal.
+
 ## Install
 
 Requires Python 3.14 (mønømi needs it).

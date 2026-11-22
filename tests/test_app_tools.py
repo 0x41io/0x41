@@ -183,3 +183,18 @@ def test_a_plan_that_changed_after_approval_refuses_and_sends_nothing(lab, monke
     monkeypatch.setattr(app_approvals, "default_plan", changed)
     refused("app_run", {"rid": rid}, "plan no longer matches")
     assert lab["net"]["sent"] == []
+
+
+# --- v0.10.1: a privileged_function case (akashi v0.5.0) flows through 0x41 -------
+
+PRIV_CASE = ('type = "privileged_function"\nbase = "https://app.41xlab.test"\n'
+             'resource = "/api/admin/users"\nprivileged = "admin"\nactor = "alice"\n'
+             'login = { path = "/api/login", session = "cookie" }\n')
+
+
+def test_list_cases_shows_a_privileged_function_case(lab):
+    (lab["cases"] / "admin-authz.toml").write_text(PRIV_CASE)
+    out = {c["case"]: c for c in call("list_cases", {})["cases"]}
+    assert out["admin-authz"]["type"] == "privileged_function"
+    assert out["admin-authz"]["owner"] == "admin" and out["admin-authz"]["actor"] == "alice"
+    assert out["admin-authz"]["resource"] == "/api/admin/users"
