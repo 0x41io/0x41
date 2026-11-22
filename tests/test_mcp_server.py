@@ -66,17 +66,20 @@ def stand_in_start(monkeypatch, script="import time; time.sleep(30)"):
 
     def start(domain, hosts_file=None, **kw):
         seen.append((domain, hosts_file))
-        return real(domain, hosts_file, command=lambda d, r, h: [sys.executable, "-c", script], **kw)
+        return real(domain, hosts_file, command=lambda d, r, h, p=None: [sys.executable, "-c", script], **kw)
     monkeypatch.setattr(jobs, "start", start)
     return seen
 
 
 # --- the tools on offer -----------------------------------------------------
 
-def test_nine_tools_and_none_takes_a_scope_creds_path_or_a_yes():
+def test_ten_tools_and_none_takes_a_scope_creds_path_or_a_yes():
     tools = {t.name: t for t in asyncio.run(mcp_server.mcp.list_tools())}
     assert set(tools) == {"vet_start", "vet_status", "list_vets", "explain_cves", "prove_request", "prove_run",
-                          "list_cases", "app_request", "app_run"}
+                          "list_cases", "app_request", "app_run", "list_programs"}
+    # v0.10.0: a vet names a program, never a scope file or a path
+    assert set(tools["vet_start"].input_schema["properties"]) == {"domain", "hosts_file", "program"}
+    assert tools["list_programs"].annotations.read_only_hint is True
     for t in tools.values():
         params = set((t.input_schema or {}).get("properties", {}))
         assert not params & {"scope", "scope_file", "active", "yes", "approve", "approved_ids", "ai",
@@ -354,3 +357,47 @@ def test_vet_status_names_what_monomi_left_out(homes):
 def test_vet_status_without_anything_left_out_has_no_key(homes):
     finished_vet(homes)
     assert "left_out_by_monomi" not in call("vet_status", {"job_id": JOB})
+
+
+# --- v0.10.0: bug bounty programs, by name ----------------------------------------
+
+def a_program(homes):
+    folder = homes / "x41" / "programs"
+    folder.mkdir(parents=True)
+    (folder / "shop.txt").write_text("*.example.test\napi.example.test\n!old.example.test\n")
+    return folder
+
+
+def test_vet_start_takes_a_program_by_name(homes, monkeypatch):
+    a_program(homes)
+    seen = []
+    real = jobs.start
+
+    def start(domain, hosts_file=None, **kw):
+        seen.append(kw.get("program"))
+        return real(domain, hosts_file, command=lambda d, r, h, p=None: [sys.executable, "-c", "pass"], **kw)
+    monkeypatch.setattr(jobs, "start", start)
+    out = call("vet_start", {"domain": "example.test", "program": "shop"})
+    assert out["program"] == "shop" and seen == ["shop"]
+
+
+@pytest.mark.parametrize("bad", ["nope", "../shop", "/etc/passwd", "shop.txt"])
+def test_vet_start_refuses_an_unknown_or_pathlike_program_before_starting(homes, bad):
+    a_program(homes)
+    with pytest.raises(mcp_server.ToolError, match="program"):
+        asyncio.run(mcp_server.mcp.call_tool("vet_start", {"domain": "example.test", "program": bad}))
+    assert not (homes / "x41" / "runs").exists()   # nothing started
+
+
+def test_list_programs_shows_names_and_counts(homes):
+    a_program(homes)
+    out = call("list_programs", {})
+    [p] = out["programs"]
+    assert p["program"] == "shop" and p["in_scope_rules"] == 2 and p["excluded_rules"] == 1
+    assert out["folder"].endswith("programs")
+
+
+def test_vet_status_says_which_program_scoped_it(homes):
+    finished_vet(homes, {**RECORD, "program": "shop", "scope_hosts": ["api.example.test"]})
+    out = call("vet_status", {"job_id": JOB})
+    assert out["program"] == "shop" and out["scope_hosts_added"] == 1

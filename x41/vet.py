@@ -34,7 +34,7 @@ MONOMI_FLAGS = ["--email", "--takeover", "--ports"]
 @dataclass
 class Tools:
     """Everything a vet calls out to. default_tools() wires in the real ones."""
-    scan: Callable            # (domain, scan_path, hosts_file) -> exit code
+    scan: Callable            # (domain, scan_path, hosts_file, scope) -> exit code
     plan: Callable            # akashi.api.plan
     prove_passive: Callable   # akashi.api.prove_passive
     prove_active: Callable    # akashi.api.prove_active
@@ -46,13 +46,34 @@ class Tools:
     interactive: Callable = lambda: sys.stdin.isatty()
 
 
-def run_monomi(domain: str, scan_path: str, hosts_file: str | None = None) -> int:
+def run_monomi(domain: str, scan_path: str, hosts_file: str | None = None, scope: str | None = None) -> int:
     """Monomi's own command, with this same Python, so its live output is the
-    progress display. Passive flags only (see MONOMI_FLAGS)."""
+    progress display. Passive flags only (see MONOMI_FLAGS). With a scope file
+    (v0.10.0), mønømi sets aside every host it doesn't allow, with the rule
+    named, instead of building leads on them; nothing active runs, since
+    MONOMI_FLAGS has no active check."""
     cmd = [sys.executable, "-m", "monomi", domain, *MONOMI_FLAGS, "--json", scan_path]
     if hosts_file:
         cmd += ["--hosts", hosts_file]
+    if scope:
+        cmd += ["--scope", scope]
     return subprocess.run(cmd).returncode
+
+
+def merged_hosts(run_dir: str, hosts_file: str | None, scope_hosts: list) -> str | None:
+    """One hosts file for mønømi: the --hosts file's lines plus the scope
+    file's exact hosts (v0.10.0), written into the run folder so the run
+    keeps what it checked. None when there's nothing to add."""
+    if not scope_hosts:
+        return hosts_file
+    lines = []
+    if hosts_file:
+        with open(hosts_file, encoding="utf-8") as f:
+            lines = [line.strip() for line in f if line.strip() and not line.startswith("#")]
+    path = os.path.join(run_dir, "hosts.txt")
+    with open(path, "w", encoding="utf-8") as f:
+        f.write("\n".join(dict.fromkeys(lines + scope_hosts)) + "\n")
+    return path
 
 
 def default_tools() -> Tools:
@@ -155,6 +176,7 @@ def write_verdicts(path: str, target: str, verdicts: list) -> None:
 
 def vet(domain: str, *, scope: str | None = None, ai: bool = False, active: bool = True,
         cves: bool = True, hosts_file: str | None = None, tools: Tools | None = None,
+        program: str | None = None,
         out_root: str | None = None, now: datetime | None = None, run_dir: str | None = None) -> int:
     try:
         domain = clean_target(domain)
@@ -173,11 +195,22 @@ def vet(domain: str, *, scope: str | None = None, ai: bool = False, active: bool
     rec = {"domain": domain, "started": now.isoformat(timespec="seconds"), "run_dir": run_dir,
            "versions": tools.versions, "scope": scope, "ai": ai,
            "verdicts": [], "not_proven": [], "unhandled": [], "leads": [], "cves": None,
-           "left_out": None}
+           "left_out": None, "program": program, "scope_hosts": []}
 
-    # 1. mønømi: a passive scan
-    step(1, "mønømi", f"scanning {domain} (passive)")
-    code = tools.scan(domain, scan_path, hosts_file)
+    # 1. mønømi: a passive scan, scoped when there's a scope file (v0.10.0)
+    scoped = f", scoped to {program}" if program else ", scoped" if scope else ""
+    step(1, "mønømi", f"scanning {domain} (passive){scoped}")
+    if scope:
+        from x41 import programs
+        try:
+            rec["scope_hosts"] = programs.exact_hosts(scope, domain)
+        except OSError as e:
+            print(f"0x41: can't read the scope file: {e}; nothing ran.", file=sys.stderr)
+            return 2
+        if rec["scope_hosts"]:
+            print(f"         {len(rec['scope_hosts'])} exact host(s) from the scope added as extra hosts")
+    hosts_for_monomi = merged_hosts(run_dir, hosts_file, rec["scope_hosts"])
+    code = tools.scan(domain, scan_path, hosts_for_monomi, scope)
     if code != 0 or not os.path.exists(scan_path):
         print(f"\n0x41: monomi didn't finish (exit {code}); nothing else ran.", file=sys.stderr)
         return 2

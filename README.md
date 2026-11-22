@@ -41,6 +41,11 @@ Since v0.9.0 (mønømi v1.23.0), the report's **Not proven** list also names wha
 
 Since v0.9.1 (mønømi v1.23.1, kaidoku v0.10.2), the report's CVE list leaves out CVEs on someone else's server, such as Google's shared front end, not only on CDN edges: they belong to that service, not the target.
 
+Since v0.10.0 (mønømi v1.24.0, akashi v0.4.0):
+
+- **Bug bounty programs.** Put a program's scope list in `programs/NAME.txt` (0x41's data folder, mønømi's scope format: `example.com`, `*.example.com`, `!excluded.example.com`) and run `0x41 vet example.com --program NAME`, or pass `--scope FILE` as before. The scope now reaches mønømi's scan too: hosts it doesn't allow are set aside with the rule named, instead of becoming leads, and its exact in-scope hosts under the domain are checked as extra hosts, so hosts certificate logs never show (behind a wildcard certificate) aren't missed. From Claude, `vet_start` takes the program's name (`list_programs` shows them), never a file or a path, and those vets stay passive.
+- **One "go around the CDN" lead per CDN.** mønømi lists every origin candidate in one lead, ranked, and akashi tries them in one approval: confirmed if any origin serves the site, ruled out only if none does.
+
 ## Install
 
 Requires Python 3.14 (mønømi needs it).

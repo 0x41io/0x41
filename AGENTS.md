@@ -9,6 +9,10 @@
 - App checks over MCP (x41/app_approvals.py, v0.7) follow the same rule, plus: an MCP tool may take only a case
   NAME (a file in `cases/`, which the person writes), never a case file, target, URL, path or credentials;
   `app_run` takes only the approval id; the approval pins the case, scope and creds files (sha256).
+- Bug bounty programs (x41/programs.py, v0.10): `vet_start` may take a program NAME (a file in `programs/`,
+  which the person writes, in mønømi's scope format), never a scope file or a path. A program only scopes a
+  PASSIVE vet (out-of-scope hosts set aside, its exact hosts checked): a vet started over MCP always runs
+  with `--no-active`, so a program never makes an active request possible from MCP.
 - Approval records, the typed yes and the single-use claim come from mønømi's `monomi.approvalcore`, never a
   copy here. A change to that core is made in mønømi (its contract test names what 0x41 uses) and pinned here.
 - Tool versions are pinned to exact tags in `pyproject.toml`. Bump them together, and only to tags whose tests pass together.

@@ -114,6 +114,8 @@ def markdown(rec: dict) -> str:
     v = rec.get("versions") or {}
     tools = " · ".join(f"{name} {v[name]}" for name in ("monomi", "akashi", "kaidoku") if v.get(name))
     scope = md(rec.get("scope")) if rec.get("scope") else "none (active proofs blocked)"
+    if rec.get("program"):
+        scope = f"program {md(rec['program'])} ({scope})"
     leads = sorted(rec.get("leads") or [], key=lambda d: (STATE_ORDER.index(d.get("state", "unclear"))
                                                           if d.get("state") in STATE_ORDER else 9, d["id"]))
     out = [f"# 0x41 vet: {md(rec.get('target') or rec.get('domain'))}", "",

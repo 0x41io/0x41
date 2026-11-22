@@ -38,7 +38,7 @@ from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import ToolAnnotations
 
-from x41 import __version__, approvals, jobs
+from x41 import __version__, approvals, jobs, programs
 
 # The server itself. "0x41" is the name agents will see.
 mcp = MCPServer("0x41")
@@ -80,7 +80,7 @@ def hosts_file_path(path: str) -> str:
     destructiveHint=False,   # ...but changes nothing anywhere else
     idempotentHint=False,
     openWorldHint=True))
-def vet_start(domain: str, hosts_file: str | None = None) -> dict:
+def vet_start(domain: str, hosts_file: str | None = None, program: str | None = None) -> dict:
     """Start a 0x41 vet of a domain in the background and return a job id at
     once: mønømi scans it (passive: certificate logs, DNS, email records,
     Shodan's existing data), akashi proves the leads it can with DNS and
@@ -89,13 +89,32 @@ def vet_start(domain: str, hosts_file: str | None = None) -> dict:
     proofs never run here (they need a person's typed yes at a terminal).
     A vet takes about 1-3 minutes: call vet_status with the job id then.
     One vet runs at a time. hosts_file: optional .txt of extra hostnames,
-    inside mønømi's scans folder."""
+    inside mønømi's scans folder. program: optional NAME of a bug bounty
+    program the person set up (see list_programs), never a path: hosts its
+    scope doesn't allow are set aside with the reason instead of becoming
+    leads, and its exact in-scope hosts are checked too."""
     real = hosts_file_path(hosts_file) if hosts_file else None
+    if program is not None:
+        try:
+            programs.program_path(program)  # refused here, before any job starts
+        except programs.ProgramError as e:
+            raise ToolError(str(e)) from None
     try:
-        out = jobs.start(domain, real)
+        out = jobs.start(domain, real, program=program)
     except jobs.JobError as e:
         raise ToolError(str(e)) from None
+    if program:
+        out["program"] = program
     return {**out, "next": "Call vet_status with this job_id in about a minute."}
+
+
+@mcp.tool(annotations=ToolAnnotations(title="List bug bounty programs", readOnlyHint=True, openWorldHint=False))
+def list_programs() -> dict:
+    """The bug bounty programs the person has set up: scope files in 0x41's
+    programs/ folder (programs/<name>.txt, mønømi's scope format). Pass a
+    program's name to vet_start to scope a vet to it. Only the person adds
+    or edits programs; this lists them, with their rule counts. Reads files only."""
+    return {"programs": programs.list_programs(), "folder": programs.programs_dir(), "note": UNTRUSTED}
 
 
 def _finding(lead: dict) -> dict:
@@ -151,6 +170,7 @@ def vet_summary(st: dict) -> dict:
     out = {
         "job_id": st["job_id"], "domain": st["domain"], "status": "done", "started": st.get("started"),
         "tally": report.tally(rec), "versions": rec.get("versions"),
+        "program": rec.get("program"), "scope_hosts_added": len(rec.get("scope_hosts") or []),
         "findings": [_finding(d) for d in leads[:LIST_CAP]],
         "not_proven": [_not_proven(n) for n in not_proven[:LIST_CAP]],
         "not_provable_yet": [{"id": u.get("id"), "rule": u.get("rule")}

@@ -22,7 +22,7 @@ JOB = "example.test/2026-11-16_180000"
 def stand_in(script: str):
     """A command that runs `script` (Python) in place of a vet. The script
     gets the run folder as sys.argv[1]."""
-    def command(domain, run_dir, hosts_file):
+    def command(domain, run_dir, hosts_file, program=None):
         return [sys.executable, "-c", script, run_dir]
     return command
 

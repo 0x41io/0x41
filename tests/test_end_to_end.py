@@ -71,7 +71,7 @@ def stubbed_network(monkeypatch, tmp_path):
 
 def real_tools(answer):
     tools = vet_mod.default_tools()
-    tools.scan = lambda domain, path, hosts: (write_scan(path), 0)[1]
+    tools.scan = lambda domain, path, hosts, scope=None: (write_scan(path), 0)[1]
     tools.ask = lambda prompt: answer
     tools.interactive = lambda: True
     return tools

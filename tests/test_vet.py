@@ -41,8 +41,9 @@ class Fake:
             versions={"monomi": "1.16.0", "akashi": "0.2.1", "kaidoku": "0.8.0"},
             ask=self.ask, interactive=lambda: self.is_tty)
 
-    def scan(self, domain, path, hosts):
+    def scan(self, domain, path, hosts, scope=None):
         self.calls.append(("scan", domain, hosts))
+        self.scope_given = scope
         if self.scan_code == 0:
             open(path, "w").write(json.dumps(self.scan_json))
         return self.scan_code
