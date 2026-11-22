@@ -26,13 +26,33 @@ def _demote(briefing: str) -> str:
     return re.sub(r"^## ", "#### ", briefing, flags=re.MULTILINE)
 
 
+def left_out_line(cut: dict, most: int = 10) -> str:
+    """One line on what mønømi's cap left out (see vet.left_out)."""
+    bits = []
+    if cut.get("paths"):
+        bits.append(f"{cut['paths']} attack path(s)")
+    if cut.get("leads"):
+        bits.append(f"{cut['leads']} lead(s)")
+    line = f"{' and '.join(bits)} past mønømi's top 10, never proven"
+    hosts = cut.get("lead_hosts") or []
+    if hosts:
+        more = f" and {len(hosts) - most} more" if len(hosts) > most else ""
+        line += f" (leads about {', '.join(md(h) for h in hosts[:most])}{more})"
+    return line
+
+
+def _left_out_count(rec: dict) -> int:
+    cut = rec.get("left_out") or {}
+    return int(cut.get("paths") or 0) + int(cut.get("leads") or 0)
+
+
 def tally(rec: dict) -> str:
     counts = {s: 0 for s in STATE_ORDER}
     for lead in rec.get("leads") or []:
         counts[lead.get("state", "unclear")] = counts.get(lead.get("state", "unclear"), 0) + 1
     words = {"open": "confirmed", "unclear": "unclear", "fixed": "fixed", "ruled_out": "ruled out"}
     bits = [f"{counts[s]} {words[s]}" for s in STATE_ORDER if counts.get(s) or s in ("open", "unclear")]
-    left = len(rec.get("not_proven") or []) + len(rec.get("unhandled") or [])
+    left = len(rec.get("not_proven") or []) + len(rec.get("unhandled") or []) + _left_out_count(rec)
     if left:
         bits.append(f"{left} not proven (see the report)")
     return " · ".join(bits)
@@ -112,12 +132,16 @@ def markdown(rec: dict) -> str:
 
     not_proven = rec.get("not_proven") or []
     unhandled = rec.get("unhandled") or []
-    if not_proven or unhandled:
+    cut = rec.get("left_out")
+    if not_proven or unhandled or cut:
         out += ["## Not proven", "", "Listed so nothing is dropped silently.", ""]
         out += [f"- **{md(n['id'])}** {md(n['rule'])}: {md(n['reason'])}"
                 + (f". Would {md(n['summary'])}" if n.get("summary") else "") for n in not_proven]
         out += [f"- **{md(u['id'])}** {md(u['rule'])}: akashi doesn't prove this kind of lead yet"
                 for u in unhandled]
+        if cut:
+            out.append(f"- **Left out by mønømi:** {left_out_line(cut, most=len(cut.get('lead_hosts') or []))}. "
+                       "Re-run mønømi on those hosts (`--hosts`) to see them")
         out.append("")
 
     out += _cves(rec)

@@ -37,6 +37,8 @@ Since v0.8, an active proof that didn't run also says what it's about, in akashi
 
 Since v0.8.1 (mønømi v1.22.1), hosts on Microsoft 365 or Google's shared front end are never treated as a possible origin server, so a company's `autodiscover` record no longer turns into "go around the CDN" leads.
 
+Since v0.9.0 (mønømi v1.23.0), the report's **Not proven** list also names what mønømi's cap left out. mønømi passes on its top 10 attack paths and top 10 leads, so anything past that is never proven: the report gives the count and the hosts those leads are about, and the MCP summary has it as `left_out_by_monomi`. mønømi v1.23.0 also ranks its leads before the cut, so the 10 passed on are the ones worth the most, and leaves vendor-hosted sites (careers pages, help desks, Azure Static Web Apps...) out of "go around the CDN".
+
 ## Install
 
 Requires Python 3.14 (mønømi needs it).

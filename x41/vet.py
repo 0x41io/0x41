@@ -128,6 +128,23 @@ def gate_notes(scan_path: str) -> dict:
     return out
 
 
+def left_out(scan_path: str) -> dict | None:
+    """What mønømi's cap left out of the scan (it passes on its top 10 attack
+    paths and top 10 leads), or None when nothing was: {"paths": n, "leads":
+    n, "lead_hosts": [...]}. akashi only plans from what mønømi passes on, so
+    these are never proven: the report lists them under "Not proven" so
+    nothing is dropped silently. lead_hosts (mønømi v1.23.0) names the hosts
+    the cut leads are about; an older scan gives the counts only."""
+    with open(scan_path, encoding="utf-8") as f:
+        scan = json.load(f)
+    built = (scan.get("paths") if isinstance(scan, dict) else None) or {}
+    paths, leads = int(built.get("more") or 0), int(built.get("more_leads") or 0)
+    if not (paths or leads):
+        return None
+    return {"paths": paths, "leads": leads,
+            "lead_hosts": [str(h) for h in built.get("more_leads_hosts") or []]}
+
+
 def write_verdicts(path: str, target: str, verdicts: list) -> None:
     """This vet's verdicts, in akashi's own history format, so kaidoku reads
     them exactly like a proof history (one file for this vet only)."""
@@ -155,7 +172,8 @@ def vet(domain: str, *, scope: str | None = None, ai: bool = False, active: bool
     scan_path = os.path.join(run_dir, "scan.json")
     rec = {"domain": domain, "started": now.isoformat(timespec="seconds"), "run_dir": run_dir,
            "versions": tools.versions, "scope": scope, "ai": ai,
-           "verdicts": [], "not_proven": [], "unhandled": [], "leads": [], "cves": None}
+           "verdicts": [], "not_proven": [], "unhandled": [], "leads": [], "cves": None,
+           "left_out": None}
 
     # 1. mønømi: a passive scan
     step(1, "mønømi", f"scanning {domain} (passive)")
@@ -163,6 +181,9 @@ def vet(domain: str, *, scope: str | None = None, ai: bool = False, active: bool
     if code != 0 or not os.path.exists(scan_path):
         print(f"\n0x41: monomi didn't finish (exit {code}); nothing else ran.", file=sys.stderr)
         return 2
+    rec["left_out"] = left_out(scan_path)
+    if rec["left_out"]:
+        print(f"         {report.left_out_line(rec['left_out'])}")
 
     # 2. akashi: the plan, then every passive proof (never touches the target)
     plan = tools.plan(scan_path, scope)

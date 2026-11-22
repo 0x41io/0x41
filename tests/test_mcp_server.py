@@ -340,3 +340,17 @@ def test_findings_carry_the_note_and_keep_their_verdict(homes):
     p1 = call("vet_status", {"job_id": JOB})["findings"][0]
     assert p1["notes"] == [NOTE]
     assert p1["label"] == "CONFIRMED" and p1["state"] == "open"
+
+
+# --- v0.9.0: what mønømi's cap left out --------------------------------------------
+
+def test_vet_status_names_what_monomi_left_out(homes):
+    cut = {"paths": 0, "leads": 3, "lead_hosts": ["site11.example.test", "site12.example.test"]}
+    finished_vet(homes, {**RECORD, "left_out": cut})
+    out = call("vet_status", {"job_id": JOB})
+    assert out["left_out_by_monomi"] == cut
+
+
+def test_vet_status_without_anything_left_out_has_no_key(homes):
+    finished_vet(homes)
+    assert "left_out_by_monomi" not in call("vet_status", {"job_id": JOB})

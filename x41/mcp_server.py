@@ -160,6 +160,14 @@ def vet_summary(st: dict) -> dict:
     }
     if len(leads) > LIST_CAP:
         out["findings_more"] = len(leads) - LIST_CAP
+    cut = rec.get("left_out")
+    if cut:
+        # Past mønømi's top 10: never planned, so never proven (v0.9.0)
+        hosts = cut.get("lead_hosts") or []
+        out["left_out_by_monomi"] = {"paths": cut.get("paths", 0), "leads": cut.get("leads", 0),
+                                     "lead_hosts": hosts[:LIST_CAP]}
+        if len(hosts) > LIST_CAP:
+            out["left_out_by_monomi"]["lead_hosts_more"] = len(hosts) - LIST_CAP
     if waiting:
         out["active_proofs_waiting"] = [_waiting(n) for n in waiting]
         out["to_run_active_proofs"] = (

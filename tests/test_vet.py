@@ -279,3 +279,50 @@ def test_gate_notes_reads_paths_and_leads(tmp_path):
     assert vet_mod.gate_notes(str(path)) == {"P1": ["a"], "L4": ["b", "c"]}
     path.write_text("{}")
     assert vet_mod.gate_notes(str(path)) == {}
+
+
+# --- v0.9.0: what mønømi's cap left out is listed, never dropped ----------------------
+
+SCAN_WITH_CUT = {"paths": {"paths": [], "leads": [], "more": 0, "more_leads": 3,
+                           "more_leads_hosts": ["site11.example.test", "site12.example.test"]}}
+
+
+def test_left_out_reads_mønømis_counts_and_hosts(tmp_path):
+    path = tmp_path / "scan.json"
+    path.write_text(json.dumps(SCAN_WITH_CUT))
+    assert vet_mod.left_out(str(path)) == {"paths": 0, "leads": 3,
+                                           "lead_hosts": ["site11.example.test", "site12.example.test"]}
+    # A scan from before mønømi v1.23.0: the count, no hosts
+    path.write_text(json.dumps({"paths": {"more": 2, "more_leads": 1}}))
+    assert vet_mod.left_out(str(path)) == {"paths": 2, "leads": 1, "lead_hosts": []}
+    # Nothing cut, or no attack-path data at all
+    path.write_text(json.dumps({"paths": {"more": 0, "more_leads": 0}}))
+    assert vet_mod.left_out(str(path)) is None
+    path.write_text("{}")
+    assert vet_mod.left_out(str(path)) is None
+
+
+def test_the_report_lists_what_was_left_out_under_not_proven(tmp_path, capsys):
+    _, run_dir = go(tmp_path, Fake(scan_json=SCAN_WITH_CUT), scope="scope.txt")
+    rec = json.loads((run_dir / "run.json").read_text())
+    assert rec["left_out"]["leads"] == 3
+    text = (run_dir / "report.md").read_text()
+    not_proven = text.split("## Not proven", 1)[1]
+    assert ("**Left out by mønømi:** 3 lead(s) past mønømi's top 10, never proven "
+            "(leads about site11.example.test, site12.example.test)") in not_proven
+    # Counted in the tally, so the summary line doesn't hide them
+    assert "4 not proven" in report.tally(rec)   # L3 (akashi can't prove it yet) + the 3 cut
+    assert "past mønømi's top 10" in capsys.readouterr().out   # said during the run too
+
+
+def test_nothing_left_out_adds_nothing(tmp_path):
+    _, run_dir = go(tmp_path, Fake(), scope="scope.txt")
+    assert json.loads((run_dir / "run.json").read_text())["left_out"] is None
+    assert "Left out by mønømi" not in (run_dir / "report.md").read_text()
+
+
+def test_left_out_line_caps_long_host_lists():
+    cut = {"paths": 1, "leads": 12, "lead_hosts": [f"h{n}.example.test" for n in range(12)]}
+    line = report.left_out_line(cut)
+    assert line.startswith("1 attack path(s) and 12 lead(s) past mønømi's top 10")
+    assert "h9.example.test and 2 more" in line and "h10.example.test" not in line
