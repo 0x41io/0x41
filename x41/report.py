@@ -90,7 +90,8 @@ def _cves(rec: dict) -> list:
     if not results and not cves.get("missing"):
         return []
     out = ["## CVEs mønømi saw", "",
-           "From Shodan's existing data on the target's own servers (CDN edges left out). "
+           "From Shodan's existing data on the target's own servers (CDN edges and servers "
+           "mønømi labels as someone else's, like a shared front end, left out). "
            "A version banner match, not proof the flaw is reachable.", "",
            "| CVE | Verdict | CVSS | EPSS | CISA KEV | Found on |", "|---|---|---|---|---|---|"]
     for r in results:

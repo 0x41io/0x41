@@ -99,3 +99,22 @@ def test_the_whole_chain_without_a_yes_sends_nothing(tmp_path, stubbed_network):
     assert stubbed_network == []                                 # nothing sent to the origin
     text = (tmp_path / "runs" / "origins.test" / "2026-11-16_020000" / "report.md").read_text()
     assert "Email spoofing: **CONFIRMED**" in text and "skipped: not approved" in text
+
+
+def test_cves_on_someone_elses_server_never_reach_the_report(monkeypatch, tmp_path):
+    # v0.9.1, the Superdrug run: monomi v1.23.1 labels Google's shared front
+    # end not_own, and kaidoku v0.10.2 (the reader vet uses) leaves its CVEs out
+    import json
+    from kaidoku import monomi_import
+    from monomi import internetdb
+    shodan = {"216.239.32.21": ["CVE-2021-41184"], "9.9.9.9": ["CVE-2024-0001"]}
+    monkeypatch.setattr(internetdb, "lookup_one",
+                        lambda ip: {"ports": [443], "vulns": shodan[ip], "tags": [], "cpes": []})
+    exposure = internetdb.lookup({"hosts": {"ecom.shop.test": {"ips": ["216.239.32.21"], "provider": "Google"},
+                                            "app.shop.test": {"ips": ["9.9.9.9"], "provider": "DigitalOcean"}},
+                                  "ip_info": {}})
+    path = tmp_path / "scan.json"
+    path.write_text(json.dumps({"target": "shop.test", "exposure": exposure}))
+    assert vet_mod.default_tools().cves_in_scan is monomi_import.load
+    _, ids, found_on = monomi_import.load(str(path))
+    assert ids == ["CVE-2024-0001"] and found_on["CVE-2024-0001"][0]["ip"] == "9.9.9.9"
