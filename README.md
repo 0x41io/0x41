@@ -48,6 +48,8 @@ Since v0.10.0 (mønømi v1.24.0, akashi v0.4.0):
 
 Since v0.10.1 (akashi v0.5.0), the app-logic checks akashi runs for a vet work against ordinary session-cookie web apps (set `login.session = "cookie"` in a case), not only JSON-token APIs, and there is a second check type, `privileged_function` — can a low-privilege account reach an admin-only endpoint? Both are driven by the case files in `cases/` and run the same way: named only, after your typed yes in a terminal.
 
+Since v0.10.2 (mønømi v1.25.0, akashi v0.5.1), a safety fix in both tools: a URL that reads as one host but connects to another (`https://evil.test\@app.example.com`) is refused. mønømi's scope check now reads the host requests really connects to, and akashi refuses such a `base` in a case file and checks every app-check request once more before sending, so a test account's password can only go to the in-scope host.
+
 ## Install
 
 Requires Python 3.14 (mønømi needs it).
