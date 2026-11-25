@@ -52,6 +52,8 @@ Since v0.10.2 (mønømi v1.25.0, akashi v0.5.1), a safety fix in both tools: a U
 
 Since v0.10.3 (mønømi v1.27.0, akashi v0.6.0), files mønømi's `--content` finds (a Git folder, an `.env`, a backup zip) become one attack path per host (rule `exposed_file`), and akashi proves it: it asks for each file again, after made-up paths that show the host's "not found", and judges it with mønømi's own content check. It's an active proof, so like going around the CDN it runs only inside scope after a typed yes, and over MCP only after `0x41 approve`. Vets stay passive and run no content discovery: the path comes from a CLI scan with `--content`.
 
+Since v0.10.4 (kaidoku v0.10.3), the report calls those findings "Files served by mistake", and an unclear one says to run akashi again with the program's research header.
+
 ## Install
 
 Requires Python 3.14 (mønømi needs it).
