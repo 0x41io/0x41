@@ -50,6 +50,8 @@ Since v0.10.1 (akashi v0.5.0), the app-logic checks akashi runs for a vet work a
 
 Since v0.10.2 (mønømi v1.25.0, akashi v0.5.1), a safety fix in both tools: a URL that reads as one host but connects to another (`https://evil.test\@app.example.com`) is refused. mønømi's scope check now reads the host requests really connects to, and akashi refuses such a `base` in a case file and checks every app-check request once more before sending, so a test account's password can only go to the in-scope host.
 
+Since v0.10.3 (mønømi v1.27.0, akashi v0.6.0), files mønømi's `--content` finds (a Git folder, an `.env`, a backup zip) become one attack path per host (rule `exposed_file`), and akashi proves it: it asks for each file again, after made-up paths that show the host's "not found", and judges it with mønømi's own content check. It's an active proof, so like going around the CDN it runs only inside scope after a typed yes, and over MCP only after `0x41 approve`. Vets stay passive and run no content discovery: the path comes from a CLI scan with `--content`.
+
 ## Install
 
 Requires Python 3.14 (mønømi needs it).
