@@ -56,6 +56,8 @@ Since v0.10.4 (kaidoku v0.10.3), the report calls those findings "Files served b
 
 Since v0.10.5, `vet_status` (over MCP) groups the CVEs per server first (`cves_by_host`: how many CVEs each server's version banner matched, how many are PATCH NOW or in CISA KEV, and its hostnames), with a note that they are banner matches to confirm, not proof: Linux distributions often patch without changing the version string. Twenty CVEs on one IP are usually one old version string, not twenty problems. Kaidoku's verdicts don't change.
 
+v0.10.5 pins mønømi v1.28.0, akashi v0.6.1 and kaidoku v0.10.4: no more takeover leads for names nobody on the internet can create (`*.internal.aws` and other brand or private TLDs), around-the-CDN origins ranked likeliest first (so akashi's five tries go to the best candidates), and a takeover ruled out at a registered vendor domain says it can't be claimed *by registering the domain*. The whole suite is AGPL-3.0-only from these versions on.
+
 ## Install
 
 Requires Python 3.14 (mønømi needs it).
