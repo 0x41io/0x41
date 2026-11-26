@@ -85,9 +85,12 @@ def vet_start(domain: str, hosts_file: str | None = None, program: str | None = 
     once: mønømi scans it (passive: certificate logs, DNS, email records,
     Shodan's existing data), akashi proves the leads it can with DNS and
     registry lookups, kaidoku explains each finding, and a report is saved.
-    PASSIVE ONLY: nothing is sent to the target's own servers, and active
-    proofs never run here (they need a person's typed yes at a terminal).
-    A vet takes about 1-3 minutes: call vet_status with the job id then.
+    PASSIVE ONLY: nothing is sent to the target's web servers (a broken DNS
+    delegation's proof asks one of the parent zone's nameservers one DNS
+    question, named in its evidence), and active proofs never run here (they
+    need a person's typed yes at a terminal). A vet takes about 1-3 minutes,
+    longer when kaidoku looks up many CVEs (about 5 a minute without an NVD
+    key): call vet_status with the job id then.
     One vet runs at a time. hosts_file: optional .txt of extra hostnames,
     inside mønømi's scans folder. program: optional NAME of a bug bounty
     program the person set up (see list_programs), never a path: hosts its

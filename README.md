@@ -9,7 +9,7 @@
 ```
 [1/4] mønømi   scanning example.com (passive)
                … monomi's own live output …
-[2/4] akashi   passive proofs (DNS / registry only, automatic)
+[2/4] akashi   passive proofs (DNS / registry, automatic)
                P1   email_spoofing   ✓ confirmed
 [3/4] akashi   active proofs (need your yes)
                L2   around_cdn: check whether www.example.com can be reached directly at the origin …
@@ -27,7 +27,7 @@ Report: runs/example.com/2026-11-16_183000/report.md
 ## What `0x41 vet` does
 
 1. **mønømi scans** the domain with its passive checks only: certificate logs, DNS, email records, and Shodan's existing port/CVE data. Nothing is sent to the target.
-2. **akashi proves the passive leads** (takeovers, email spoofing) with fresh DNS and registry lookups. These run automatically: they never contact the target.
+2. **akashi proves the passive leads** (takeovers, email spoofing, and since v0.10.6 broken DNS delegations) with fresh DNS and registry lookups. These run automatically and send nothing to the target's web servers. A broken delegation's proof also asks one of the parent zone's nameservers one DNS question (which nameservers the zone is delegated to), and its evidence names the server asked.
 3. **akashi proves the active leads** (going around the CDN) only if you gave a scope file, only for hosts it allows, and only after it has shown every request it would send and you type `yes`. No terminal, no `yes`, or `--no-active`: nothing active is sent.
 4. **kaidoku explains** every finding (with `--ai`, an AI briefing that cites the proof and never changes a verdict), and the CVEs mønømi saw on the target's own servers.
 
@@ -57,6 +57,8 @@ Since v0.10.4 (kaidoku v0.10.3), the report calls those findings "Files served b
 Since v0.10.5, `vet_status` (over MCP) groups the CVEs per server first (`cves_by_host`: how many CVEs each server's version banner matched, how many are PATCH NOW or in CISA KEV, and its hostnames), with a note that they are banner matches to confirm, not proof: Linux distributions often patch without changing the version string. Twenty CVEs on one IP are usually one old version string, not twenty problems. Kaidoku's verdicts don't change.
 
 v0.10.5 pins mønømi v1.28.0, akashi v0.6.1 and kaidoku v0.10.4: no more takeover leads for names nobody on the internet can create (`*.internal.aws` and other brand or private TLDs), around-the-CDN origins ranked likeliest first (so akashi's five tries go to the best candidates), and a takeover ruled out at a registered vendor domain says it can't be claimed *by registering the domain*. The whole suite is AGPL-3.0-only from these versions on.
+
+v0.10.6 pins mønømi v1.28.1, akashi v0.7.0 and kaidoku v0.10.5: broken DNS delegations (`dangling_ns`) are proven in every vet. Akashi re-checks the zone, learns its exact nameservers from the parent zone (one DNS question), and checks whether their domains are registered; kaidoku calls them "Broken DNS delegation" with their own next step. Route 53 delegations are graded right (IPv6 nameservers, every Route 53 range), and a registry rate limit is never read as "no registration found".
 
 ## Install
 

@@ -2,7 +2,8 @@
 `0x41 vet DOMAIN`: the whole suite in one command.
 
     [1/4] mønømi   a passive scan (its own command, live output)
-    [2/4] akashi   passive proofs: DNS / registry only, run automatically
+    [2/4] akashi   passive proofs: DNS / registry (+ one DNS question to a parent zone's nameserver
+                   for a broken delegation, akashi v0.7.0), run automatically
     [3/4] akashi   active proofs: only inside scope, only after a typed yes
     [4/4] kaidoku  explains every finding (and the CVEs mønømi saw)
 
@@ -223,7 +224,7 @@ def vet(domain: str, *, scope: str | None = None, ai: bool = False, active: bool
     target = plan["target"]
     rec["target"], rec["scope_status"] = target, plan["scope"]
     rec["unhandled"] = plan["unhandled"]
-    step(2, "akashi", "passive proofs (DNS / registry only, automatic)")
+    step(2, "akashi", "passive proofs (DNS / registry, automatic)")
     passive = tools.prove_passive(scan_path)
     rec["verdicts"] += passive["verdicts"]
     show_verdicts(passive["verdicts"]) if passive["verdicts"] else print("         nothing passive to prove")
