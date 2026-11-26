@@ -192,6 +192,12 @@ python -m pytest -q
 
 The tests stand fakes in for the tools (so the safety rules are tested directly) and run the real akashi and kaidoku once end to end. No test can reach the network.
 
-## License
+## Licensing
 
-MIT
+Copyright (c) 2026 0x41.
+
+From v0.10.5 on, 0x41 is licensed under the **GNU Affero General Public License v3.0 only** (AGPL-3.0-only); see [LICENSE](LICENSE). Versions before v0.10.5 were released under the MIT License and stay under it.
+
+In short: you can use, study, change and share it. If you share a changed version, or run one as a network service other people use, you must make its source available to them under the same license. This is a summary; the LICENSE text is what counts.
+
+Outside contributions need a contributor license agreement (CLA), so 0x41 can keep licensing the project as a whole. Open an issue and ask before sending a pull request.

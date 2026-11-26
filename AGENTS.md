@@ -17,3 +17,10 @@
   copy here. A change to that core is made in mønømi (its contract test names what 0x41 uses) and pinned here.
 - Tool versions are pinned to exact tags in `pyproject.toml`. Bump them together, and only to tags whose tests pass together.
 - Release checklist: VERSION (`x41/__init__.py`), README, behavior tests, `pycodestyle --max-line-length=120`, `git diff --check`, one lab run on 41xlab.
+
+## Licensing (from v0.10.5)
+
+- 0x41 is AGPL-3.0-only from v0.10.5 on; earlier versions stay MIT. New files fall under it: add no MIT headers or other license notices.
+- Borrow ideas from other tools (BBOT, ARTEX, ...), never their code: no copying, pasting or translating code from another project, whatever its license, so 0x41 keeps full ownership and can sell or relicense later.
+- A new dependency needs its license checked first: MIT, BSD, ISC, Apache-2.0, LGPL, MPL-2.0 and PSF are fine; GPL-2.0-only is not compatible. Name it in the patch description.
+- No outside code contributions without a CLA: ask Roi.

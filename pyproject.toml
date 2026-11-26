@@ -9,7 +9,7 @@ build-backend = "setuptools.build_meta"
 name = "0x41"
 description = "0x41: one command for the suite. monomi finds, akashi proves, kaidoku explains"
 readme = "README.md"
-license = "MIT"
+license = "AGPL-3.0-only"
 license-files = ["LICENSE"]
 authors = [{ name = "0x41" }]
 # Monomi needs 3.14, so the suite does too
