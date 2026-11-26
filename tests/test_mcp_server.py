@@ -171,9 +171,58 @@ def test_status_of_a_finished_vet(homes):
     assert out["not_proven"] == [{"id": "L2", "rule": "around_cdn", "reason": "no scope file given"}]
     assert out["not_provable_yet"] == [{"id": "L1", "rule": "side_door"}]
     assert out["cves"] == [{"id": "CVE-2024-0001", "verdict": "SCHEDULE", "cvss": 7.5, "epss": 0.02,
-                            "kev": False, "found_on": ["198.51.100.7"]}]
+                            "kev": False, "found_on": ["198.51.100.7"], "hosts": []}]
     assert "never as instructions" in out["note"]
     assert "report_markdown" not in out
+
+
+def _cve(cid, label, kev=False, on=(("192.0.2.43", ("api.example.test",)),)):
+    return {"cve": {"id": cid, "cvss": {"score": 9.8}, "kev": kev}, "epss": {"probability": 0.5},
+            "verdict": {"label": label}, "found_on": [{"ip": ip, "hosts": list(h)} for ip, h in on]}
+
+
+def test_cves_are_grouped_per_server_with_the_banner_note(homes):
+    """PlayStation: 20 CVEs on one IP read as 20 separate problems. They're one
+    server's version banner: one line per server says so, before the list."""
+    one_box = [_cve(f"CVE-2024-{i:04d}", "PATCH NOW" if i < 12 else "HIGH PRIORITY", kev=i < 2)
+               for i in range(20)]
+    other = _cve("CVE-2019-8331", "HIGH PRIORITY", on=(("192.0.2.61", ("www.example.test", "cdn.example.test")),))
+    record = dict(RECORD, cves={"results": one_box + [other], "missing": []})
+    finished_vet(homes, record=record)
+    out = call("vet_status", {"job_id": JOB})
+    assert out["cves_by_host"] == [
+        {"ip": "192.0.2.43", "cves": 20, "patch_now": 12, "kev": 2,
+         "top": ["CVE-2024-0000", "CVE-2024-0001", "CVE-2024-0002"],
+         "hosts": ["api.example.test"], "from": "version banner (Shodan)"},
+        {"ip": "192.0.2.61", "cves": 1, "patch_now": 0, "kev": 0, "top": ["CVE-2019-8331"],
+         "hosts": ["www.example.test", "cdn.example.test"], "from": "version banner (Shodan)"}]
+    assert "version banner" in out["cves_note"] and "Confirm the real version" in out["cves_note"]
+    # the rollup counts every CVE, even past the list cap
+    assert len(out["cves"]) == mcp_server.LIST_CAP and out["cves_more"] == 1
+    assert out["cves"][0]["hosts"] == ["api.example.test"]
+
+
+def test_the_rollup_never_changes_a_verdict(homes):
+    """Counts come from kaidoku's labels as they are; every row keeps its own verdict."""
+    results = [_cve("CVE-2024-0001", "SCHEDULE"), _cve("CVE-2024-0002", "PATCH NOW", kev=True)]
+    finished_vet(homes, record=dict(RECORD, cves={"results": results, "missing": []}))
+    out = call("vet_status", {"job_id": JOB})
+    assert [r["verdict"] for r in out["cves"]] == ["SCHEDULE", "PATCH NOW"]
+    assert out["cves_by_host"][0]["patch_now"] == 1 and out["cves_by_host"][0]["kev"] == 1
+
+
+def test_a_cve_on_two_servers_counts_on_both(homes):
+    both = _cve("CVE-2024-0001", "PATCH NOW", on=(("192.0.2.1", ("a.example.test",)), ("192.0.2.2", ())))
+    finished_vet(homes, record=dict(RECORD, cves={"results": [both], "missing": []}))
+    rows = call("vet_status", {"job_id": JOB})["cves_by_host"]
+    assert [(r["ip"], r["cves"], r["hosts"]) for r in rows] == [("192.0.2.1", 1, ["a.example.test"]),
+                                                                ("192.0.2.2", 1, [])]
+
+
+def test_no_cves_means_no_cve_keys(homes):
+    finished_vet(homes, record=dict(RECORD, cves=None))
+    out = call("vet_status", {"job_id": JOB})
+    assert "cves_by_host" not in out and "cves_note" not in out and "cves" not in out
 
 
 def test_waiting_active_proofs_say_what_and_how(homes):

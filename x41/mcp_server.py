@@ -127,11 +127,52 @@ def _finding(lead: dict) -> dict:
     return out
 
 
+HOSTS_CAP = 5          # hostnames shown per CVE row / per server
+CVES_NOTE = ("These CVEs come from Shodan matching each server's software version banner, not from "
+             "testing it. Linux distributions often patch a flaw without changing the version string, "
+             "so a banner can match many CVEs the server no longer has. Confirm the real version or "
+             "patch level before treating any as present or reporting it; the verdict says how urgent "
+             "the CVE is if it is there, not that it is there.")
+
+
+def _hosts(locs: list) -> list:
+    """Every hostname mønømi saw on these IPs, once each, in order."""
+    return list(dict.fromkeys(h for loc in locs for h in loc.get("hosts") or []))
+
+
 def _cve_row(r: dict) -> dict:
     c, e = r.get("cve") or {}, r.get("epss") or {}
+    locs = r.get("found_on") or []
     return {"id": c.get("id"), "verdict": (r.get("verdict") or {}).get("label"),
             "cvss": (c.get("cvss") or {}).get("score"), "epss": e.get("probability"),
-            "kev": bool(c.get("kev")), "found_on": [loc.get("ip") for loc in r.get("found_on") or []]}
+            "kev": bool(c.get("kev")), "found_on": [loc.get("ip") for loc in locs],
+            "hosts": _hosts(locs)[:HOSTS_CAP]}
+
+
+def _cves_by_host(results: list) -> list:
+    """One line per server: how many CVEs its banner matched, how many of those
+    kaidoku rates PATCH NOW, how many are in CISA KEV, and the top few (kaidoku's
+    ranking). Counts only, from kaidoku's verdicts: nothing here changes one.
+    A server matching many CVEs is usually one old version string, not many
+    separate problems, so this is what to read first (v0.10.5, PlayStation:
+    20 CVEs on one IP read as 12 separate PATCH NOW lines)."""
+    servers = {}
+    for r in results:  # already ranked by kaidoku (KEV, then EPSS, then CVSS)
+        c = r.get("cve") or {}
+        for loc in r.get("found_on") or []:
+            blank = {"ip": loc.get("ip"), "locs": [], "cves": 0, "patch_now": 0, "kev": 0, "top": []}
+            s = servers.setdefault(loc.get("ip"), blank)
+            s["locs"].append(loc)
+            s["cves"] += 1
+            s["patch_now"] += (r.get("verdict") or {}).get("label") == "PATCH NOW"
+            s["kev"] += bool(c.get("kev"))
+            if len(s["top"]) < 3:
+                s["top"].append(c.get("id"))
+    rows = sorted(servers.values(), key=lambda s: (-s["patch_now"], -s["cves"], s["ip"] or ""))
+    for s in rows:
+        s["hosts"] = _hosts(s.pop("locs"))[:HOSTS_CAP]
+        s["from"] = "version banner (Shodan)"
+    return rows
 
 
 def _not_proven(n: dict) -> dict:
@@ -197,7 +238,12 @@ def vet_summary(st: dict) -> dict:
             f"`0x41 vet {st['domain']} --scope scope.txt` in a terminal themselves.")
     cves = rec.get("cves") or {}
     if cves.get("results") or cves.get("missing"):
-        out["cves"] = [_cve_row(r) for r in (cves.get("results") or [])[:LIST_CAP]]
+        results = cves.get("results") or []
+        out["cves_note"] = CVES_NOTE
+        out["cves_by_host"] = _cves_by_host(results)[:LIST_CAP]
+        out["cves"] = [_cve_row(r) for r in results[:LIST_CAP]]
+        if len(results) > LIST_CAP:
+            out["cves_more"] = len(results) - LIST_CAP
         out["cves_missing"] = cves.get("missing") or []
     return out
 
@@ -211,7 +257,10 @@ def vet_status(job_id: str, detail: str = "summary") -> dict:
     for bug bounty programs: a label to check the program's rules, never a
     change to the verdict), what wasn't proven and why (with akashi's
     "summary" naming its hosts), active proofs waiting for a person, and the
-    CVEs mønømi saw. detail="full" adds the whole Markdown report.
+    CVEs mønømi saw: "cves_by_host" first (one line per server; a banner
+    matching many CVEs is usually one old version string), then each CVE,
+    and "cves_note": they're version-banner matches to confirm, not proof.
+    detail="full" adds the whole Markdown report.
     akashi decided every verdict from evidence; explanations must not change
     one. Reads files only; sends nothing."""
     if detail not in ("summary", "full"):
