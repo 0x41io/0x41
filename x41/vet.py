@@ -35,7 +35,7 @@ MONOMI_FLAGS = ["--email", "--takeover", "--ports"]
 @dataclass
 class Tools:
     """Everything a vet calls out to. default_tools() wires in the real ones."""
-    scan: Callable            # (domain, scan_path, hosts_file, scope) -> exit code
+    scan: Callable            # (domain, scan_path, hosts_file, scope[, bbot=]) -> exit code
     plan: Callable            # akashi.api.plan
     prove_passive: Callable   # akashi.api.prove_passive
     prove_active: Callable    # akashi.api.prove_active
@@ -47,7 +47,8 @@ class Tools:
     interactive: Callable = lambda: sys.stdin.isatty()
 
 
-def run_monomi(domain: str, scan_path: str, hosts_file: str | None = None, scope: str | None = None) -> int:
+def run_monomi(domain: str, scan_path: str, hosts_file: str | None = None, scope: str | None = None,
+               bbot: str | None = None) -> int:
     """Monomi's own command, with this same Python, so its live output is the
     progress display. Passive flags only (see MONOMI_FLAGS). With a scope file
     (v0.10.0), mønømi sets aside every host it doesn't allow, with the rule
@@ -58,6 +59,8 @@ def run_monomi(domain: str, scan_path: str, hosts_file: str | None = None, scope
         cmd += ["--hosts", hosts_file]
     if scope:
         cmd += ["--scope", scope]
+    if bbot:  # v0.11.0: a BBOT output.json, one more source of hostnames (mønømi v1.29+)
+        cmd += ["--bbot", bbot]
     return subprocess.run(cmd).returncode
 
 
@@ -177,12 +180,15 @@ def write_verdicts(path: str, target: str, verdicts: list) -> None:
 
 def vet(domain: str, *, scope: str | None = None, ai: bool = False, active: bool = True,
         cves: bool = True, hosts_file: str | None = None, tools: Tools | None = None,
-        program: str | None = None,
+        program: str | None = None, bbot_file: str | None = None,
         out_root: str | None = None, now: datetime | None = None, run_dir: str | None = None) -> int:
     try:
         domain = clean_target(domain)
     except ValueError as e:
         print(f"0x41: {e}; nothing ran.", file=sys.stderr)
+        return 2
+    if bbot_file and not os.path.isfile(bbot_file):
+        print(f"0x41: BBOT file not found: {bbot_file}; nothing ran.", file=sys.stderr)
         return 2
     root = out_root or home.data_dir("runs")
     if run_dir is not None and not inside(run_dir, root):
@@ -196,11 +202,12 @@ def vet(domain: str, *, scope: str | None = None, ai: bool = False, active: bool
     rec = {"domain": domain, "started": now.isoformat(timespec="seconds"), "run_dir": run_dir,
            "versions": tools.versions, "scope": scope, "ai": ai,
            "verdicts": [], "not_proven": [], "unhandled": [], "leads": [], "cves": None,
-           "left_out": None, "program": program, "scope_hosts": []}
+           "left_out": None, "program": program, "scope_hosts": [], "bbot": bbot_file}
 
     # 1. mønømi: a passive scan, scoped when there's a scope file (v0.10.0)
     scoped = f", scoped to {program}" if program else ", scoped" if scope else ""
-    step(1, "mønømi", f"scanning {domain} (passive){scoped}")
+    with_bbot = ", with BBOT's hostnames" if bbot_file else ""
+    step(1, "mønømi", f"scanning {domain} (passive){scoped}{with_bbot}")
     if scope:
         from x41 import programs
         try:
@@ -211,7 +218,7 @@ def vet(domain: str, *, scope: str | None = None, ai: bool = False, active: bool
         if rec["scope_hosts"]:
             print(f"         {len(rec['scope_hosts'])} exact host(s) from the scope added as extra hosts")
     hosts_for_monomi = merged_hosts(run_dir, hosts_file, rec["scope_hosts"])
-    code = tools.scan(domain, scan_path, hosts_for_monomi, scope)
+    code = tools.scan(domain, scan_path, hosts_for_monomi, scope, **({"bbot": bbot_file} if bbot_file else {}))
     if code != 0 or not os.path.exists(scan_path):
         print(f"\n0x41: monomi didn't finish (exit {code}); nothing else ran.", file=sys.stderr)
         return 2
@@ -296,8 +303,9 @@ def vet(domain: str, *, scope: str | None = None, ai: bool = False, active: bool
         except ValueError:
             ids, found_on = [], {}
         if ids:
-            print(f"         {len(ids)} CVE(s) seen by monomi: looking them up "
-                  "(the NVD allows ~5 a minute without a key)")
+            pace = ("with your NVD key, about 50 every 30 seconds" if os.environ.get("NVD_API_KEY")
+                    else "the NVD allows about 5 every 30 seconds without a key; a free key makes it 10x faster")
+            print(f"         {len(ids)} CVE(s) seen by monomi: looking them up ({pace})")
             rec["cves"] = tools.lookup_cves(ids, ai=ai, found_on=found_on)
 
     # the report

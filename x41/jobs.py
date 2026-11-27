@@ -69,7 +69,8 @@ def job_dir(job_id: str, root: str | None = None) -> str:
     return path
 
 
-def default_command(domain: str, run_dir: str, hosts_file: str | None, program: str | None = None) -> list:
+def default_command(domain: str, run_dir: str, hosts_file: str | None, program: str | None = None,
+                    bbot: str | None = None) -> list:
     """The vet a job runs. Always --no-active: a vet started over MCP never
     sends anything to the target, with or without a program (v0.10.0)."""
     cmd = [sys.executable, "-m", "x41", "vet", domain, "--no-active", "--run-dir", run_dir]
@@ -77,6 +78,8 @@ def default_command(domain: str, run_dir: str, hosts_file: str | None, program: 
         cmd += ["--hosts", hosts_file]
     if program:
         cmd += ["--program", program]
+    if bbot:
+        cmd += ["--bbot", bbot]
     return cmd
 
 
@@ -154,7 +157,8 @@ def running(root: str | None = None) -> str | None:
 
 
 def start(domain: str, hosts_file: str | None = None, *, root: str | None = None,
-          now: datetime | None = None, command=default_command, program: str | None = None) -> dict:
+          now: datetime | None = None, command=default_command, program: str | None = None,
+          bbot: str | None = None) -> dict:
     """Start a vet in the background and return at once.
 
     One at a time: if a vet is still running, JobError names it. A bad domain
@@ -174,7 +178,7 @@ def start(domain: str, hosts_file: str | None = None, *, root: str | None = None
         raise JobError(f"{job_id} already exists; try again in a second")
     os.makedirs(run_dir)
 
-    cmd = command(domain, run_dir, hosts_file, program)
+    cmd = command(domain, run_dir, hosts_file, program, **({"bbot": bbot} if bbot else {}))
     env = {**os.environ, "PYTHONUNBUFFERED": "1", "NO_COLOR": "1"}
     with open(os.path.join(run_dir, LOG_FILE), "w", encoding="utf-8") as log:
         # start_new_session: the vet keeps going (and writes its report) even
@@ -183,6 +187,7 @@ def start(domain: str, hosts_file: str | None = None, *, root: str | None = None
                                 env=env, start_new_session=True)
     _procs[proc.pid] = proc
     job = {"job_id": job_id, "domain": domain, "pid": proc.pid, "hosts_file": hosts_file, "program": program,
+           "bbot": bbot,
            "started": now.isoformat(timespec="seconds"), "command": cmd}
     with open(os.path.join(run_dir, JOB_FILE), "w", encoding="utf-8") as f:
         json.dump(job, f, indent=2)

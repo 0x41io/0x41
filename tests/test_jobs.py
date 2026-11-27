@@ -172,6 +172,13 @@ def test_the_real_command_is_never_active():
     assert cmd[cmd.index("--run-dir") + 1] == "/runs/example.test/x"
     assert cmd[cmd.index("--hosts") + 1] == "hosts.txt"
     assert "--hosts" not in jobs.default_command("example.test", "/r", None)
+    assert "--bbot" not in cmd
+
+
+def test_a_bbot_file_is_passed_to_the_vet_and_still_never_active():
+    cmd = jobs.default_command("example.test", "/r", None, None, bbot="/home/u/.bbot/scans/s/output.json")
+    assert cmd[cmd.index("--bbot") + 1] == "/home/u/.bbot/scans/s/output.json"
+    assert "--no-active" in cmd
 
 
 NO_NETWORK_CHILD = (

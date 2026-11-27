@@ -74,13 +74,38 @@ def hosts_file_path(path: str) -> str:
     return real
 
 
+BBOT_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")
+
+
+def bbot_scans_dir() -> str:
+    """Where BBOT keeps its scans: ~/.bbot/scans/<name>/output.json."""
+    return os.path.join(os.path.expanduser("~"), ".bbot", "scans")
+
+
+def bbot_scan_path(name: str) -> str:
+    """The output.json of the BBOT scan named NAME (bbot -n NAME), or a
+    ToolError. A name, never a path, like a program: an agent can't point a
+    vet at any other file (v0.11.0)."""
+    if not BBOT_NAME.match(name or ""):
+        raise ToolError("bbot must be a BBOT scan name (letters, digits, - and _, as given to bbot -n), "
+                        "not a path")
+    root = os.path.realpath(bbot_scans_dir())
+    real = os.path.realpath(os.path.join(root, name, "output.json"))
+    if os.path.commonpath([real, root]) != root:
+        raise ToolError(f"bbot scan {name!r} isn't inside {root}")
+    if not os.path.isfile(real):
+        raise ToolError(f"no BBOT scan named {name!r}: {real} not found (run bbot with -om json -n {name})")
+    return real
+
+
 @mcp.tool(annotations=ToolAnnotations(
     title="Start a passive vet (background)",
     readOnlyHint=False,      # it writes a run folder and akashi's proof history...
     destructiveHint=False,   # ...but changes nothing anywhere else
     idempotentHint=False,
     openWorldHint=True))
-def vet_start(domain: str, hosts_file: str | None = None, program: str | None = None) -> dict:
+def vet_start(domain: str, hosts_file: str | None = None, program: str | None = None,
+              bbot: str | None = None) -> dict:
     """Start a 0x41 vet of a domain in the background and return a job id at
     once: mønømi scans it (passive: certificate logs, DNS, email records,
     Shodan's existing data), akashi proves the leads it can with DNS and
@@ -89,25 +114,31 @@ def vet_start(domain: str, hosts_file: str | None = None, program: str | None = 
     delegation's proof asks one of the parent zone's nameservers one DNS
     question, named in its evidence), and active proofs never run here (they
     need a person's typed yes at a terminal). A vet takes about 1-3 minutes,
-    longer when kaidoku looks up many CVEs (about 5 a minute without an NVD
-    key): call vet_status with the job id then.
+    longer when kaidoku looks up many CVEs (about 5 every 30 seconds without
+    an NVD key, 50 with one): call vet_status with the job id then.
     One vet runs at a time. hosts_file: optional .txt of extra hostnames,
     inside mønømi's scans folder. program: optional NAME of a bug bounty
     program the person set up (see list_programs), never a path: hosts its
     scope doesn't allow are set aside with the reason instead of becoming
-    leads, and its exact in-scope hosts are checked too."""
+    leads, and its exact in-scope hosts are checked too. bbot: optional NAME
+    of a BBOT scan the person ran (bbot ... -om json -n NAME), never a path:
+    its in-scope hostnames are one more source for mønømi (v0.11.0; 0x41
+    never runs BBOT)."""
     real = hosts_file_path(hosts_file) if hosts_file else None
+    bbot_real = bbot_scan_path(bbot) if bbot is not None else None
     if program is not None:
         try:
             programs.program_path(program)  # refused here, before any job starts
         except programs.ProgramError as e:
             raise ToolError(str(e)) from None
     try:
-        out = jobs.start(domain, real, program=program)
+        out = jobs.start(domain, real, program=program, bbot=bbot_real)
     except jobs.JobError as e:
         raise ToolError(str(e)) from None
     if program:
         out["program"] = program
+    if bbot:
+        out["bbot"] = bbot
     return {**out, "next": "Call vet_status with this job_id in about a minute."}
 
 

@@ -6,6 +6,7 @@ CVE lookup is replaced with a fake.
 """
 
 import asyncio
+import os
 import json
 import sys
 import time
@@ -78,7 +79,8 @@ def test_ten_tools_and_none_takes_a_scope_creds_path_or_a_yes():
     assert set(tools) == {"vet_start", "vet_status", "list_vets", "explain_cves", "prove_request", "prove_run",
                           "list_cases", "app_request", "app_run", "list_programs"}
     # v0.10.0: a vet names a program, never a scope file or a path
-    assert set(tools["vet_start"].input_schema["properties"]) == {"domain", "hosts_file", "program"}
+    # v0.11.0: and a BBOT scan by name, never a path
+    assert set(tools["vet_start"].input_schema["properties"]) == {"domain", "hosts_file", "program", "bbot"}
     assert tools["list_programs"].annotations.read_only_hint is True
     for t in tools.values():
         params = set((t.input_schema or {}).get("properties", {}))
@@ -450,3 +452,43 @@ def test_vet_status_says_which_program_scoped_it(homes):
     finished_vet(homes, {**RECORD, "program": "shop", "scope_hosts": ["api.example.test"]})
     out = call("vet_status", {"job_id": JOB})
     assert out["program"] == "shop" and out["scope_hosts_added"] == 1
+
+
+def a_bbot_scan(homes, monkeypatch, name="ps_sweep"):
+    root = homes / "bbot-scans"
+    (root / name).mkdir(parents=True)
+    (root / name / "output.json").write_text('{"type": "SCAN"}\n')
+    monkeypatch.setattr(mcp_server, "bbot_scans_dir", lambda: str(root))
+    return root / name / "output.json"
+
+
+def test_vet_start_takes_a_bbot_scan_by_name(homes, monkeypatch):
+    out_json = a_bbot_scan(homes, monkeypatch)
+    seen = []
+    real = jobs.start
+
+    def start(domain, hosts_file=None, **kw):
+        seen.append(kw.get("bbot"))
+        return real(domain, hosts_file, command=lambda d, r, h, p=None, **k: [sys.executable, "-c", "pass"], **kw)
+    monkeypatch.setattr(jobs, "start", start)
+    out = call("vet_start", {"domain": "example.test", "bbot": "ps_sweep"})
+    assert out["bbot"] == "ps_sweep" and seen == [os.path.realpath(out_json)]
+
+
+@pytest.mark.parametrize("bad", ["nope", "../ps_sweep", "/etc/passwd", "ps_sweep/output.json", "..", ""])
+def test_vet_start_refuses_an_unknown_or_pathlike_bbot_scan_before_starting(homes, monkeypatch, bad):
+    a_bbot_scan(homes, monkeypatch)
+    with pytest.raises(mcp_server.ToolError, match="(?i)bbot"):
+        asyncio.run(mcp_server.mcp.call_tool("vet_start", {"domain": "example.test", "bbot": bad}))
+    assert not (homes / "x41" / "runs").exists()   # nothing started
+
+
+def test_a_bbot_scan_linked_outside_its_folder_is_refused(homes, monkeypatch):
+    root = homes / "bbot-scans"
+    (root / "sneaky").mkdir(parents=True)
+    secret = homes / "secret.json"
+    secret.write_text("{}")
+    (root / "sneaky" / "output.json").symlink_to(secret)
+    monkeypatch.setattr(mcp_server, "bbot_scans_dir", lambda: str(root))
+    with pytest.raises(mcp_server.ToolError, match="isn't inside"):
+        mcp_server.bbot_scan_path("sneaky")

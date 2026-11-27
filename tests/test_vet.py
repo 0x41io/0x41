@@ -41,9 +41,9 @@ class Fake:
             versions={"monomi": "1.16.0", "akashi": "0.2.1", "kaidoku": "0.8.0"},
             ask=self.ask, interactive=lambda: self.is_tty)
 
-    def scan(self, domain, path, hosts, scope=None):
+    def scan(self, domain, path, hosts, scope=None, bbot=None):
         self.calls.append(("scan", domain, hosts))
-        self.scope_given = scope
+        self.scope_given, self.bbot_given = scope, bbot
         if self.scan_code == 0:
             open(path, "w").write(json.dumps(self.scan_json))
         return self.scan_code
@@ -174,6 +174,47 @@ def test_hosts_file_is_passed_to_monomi(tmp_path):
     fake = Fake()
     go(tmp_path, fake, hosts_file="lab-hosts.txt")
     assert fake.calls[0] == ("scan", "example.test", "lab-hosts.txt")
+
+
+def test_a_bbot_file_is_passed_to_monomi_and_kept_in_the_record(tmp_path):
+    bbot = tmp_path / "output.json"
+    bbot.write_text('{"type": "SCAN"}\n')
+    fake = Fake()
+    go(tmp_path, fake, bbot_file=str(bbot))
+    assert fake.bbot_given == str(bbot)
+    run = json.loads(next(tmp_path.rglob("run.json")).read_text())
+    assert run["bbot"] == str(bbot)
+
+
+def test_a_missing_bbot_file_stops_before_monomi(tmp_path, capsys):
+    fake = Fake()
+    code, run_dir = go(tmp_path, fake, bbot_file=str(tmp_path / "nope.json"))
+    assert code == 2 and not run_dir.exists()      # refused before any folder was made
+    assert not any(c[0] == "scan" for c in fake.calls)
+    assert "BBOT file not found" in capsys.readouterr().err
+
+
+def test_run_monomi_adds_bbot_only_when_given(monkeypatch):
+    seen = []
+
+    class Done:
+        returncode = 0
+    monkeypatch.setattr(vet_mod.subprocess, "run", lambda cmd: seen.append(cmd) or Done())
+    vet_mod.run_monomi("example.test", "/tmp/s.json", bbot="/b/output.json")
+    vet_mod.run_monomi("example.test", "/tmp/s.json")
+    assert seen[0][seen[0].index("--bbot") + 1] == "/b/output.json"
+    assert "--bbot" not in seen[1]
+
+
+@pytest.mark.parametrize("key, says", [("abc", "with your NVD key"), (None, "without a key")])
+def test_the_cve_pace_line_says_whether_there_is_an_nvd_key(tmp_path, capsys, monkeypatch, key, says):
+    if key:
+        monkeypatch.setenv("NVD_API_KEY", key)
+    else:
+        monkeypatch.delenv("NVD_API_KEY", raising=False)
+    go(tmp_path, Fake(cve_ids=["CVE-2024-0001"]))
+    out = capsys.readouterr().out
+    assert says in out and (key is None or "without a key" not in out)
 
 
 def test_monomi_runs_with_passive_flags_only(monkeypatch):
