@@ -129,10 +129,27 @@ def step(n: int, tool: str, what: str) -> None:
     print(f"\n[{n}/4] {tool.ljust(8)} {what}")
 
 
+# Akashi's reason codes for an inconclusive verdict, in a few words (v0.11.2):
+# five broken delegations printed a bare "? inconclusive" each, whether fine
+# (Route 53, every domain registered) or not checked at all. A code not listed
+# here shows nothing extra; the report has the full headline either way.
+REASON_WORDS = {
+    "pooled_registered": "Route 53, all registered: impractical to take",
+    "ns_registered": "all registered; the DNS service wasn't checked",
+    "ns_unregistered": "a nameserver's domain looks unregistered: confirm by hand",
+    "registry_unchecked": "the registry couldn't be checked: run it again later",
+    "parent_unreachable": "the parent zone couldn't be asked",
+    "delegation_elsewhere": "the break may sit elsewhere: check with dig +trace",
+    "origin_silent": "the origin didn't answer (dropped, not refused)",
+}
+
+
 def show_verdicts(verdicts: list) -> None:
     marks = {"confirmed": "✓ confirmed", "ruled_out": "✗ ruled out", "inconclusive": "? inconclusive"}
     for v in verdicts:
-        print(f"         {v['id']:<4} {v['rule']:<16} {marks.get(v['status'], v['status'])}")
+        line = f"         {v['id']:<4} {v['rule']:<16} {marks.get(v['status'], v['status'])}"
+        words = REASON_WORDS.get(v.get("reason") or "") if v["status"] == "inconclusive" else None
+        print(f"{line}: {words}" if words else line)
 
 
 def gate_notes(scan_path: str) -> dict:

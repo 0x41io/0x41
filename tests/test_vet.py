@@ -368,3 +368,27 @@ def test_left_out_line_caps_long_host_lists():
     line = report.left_out_line(cut)
     assert line.startswith("1 attack path(s) and 12 lead(s) past mønømi's top 10")
     assert "h9.example.test and 2 more" in line and "h10.example.test" not in line
+
+
+def test_an_inconclusive_verdict_says_why_in_a_few_words(capsys):
+    vet_mod.show_verdicts([
+        {"id": "L6", "rule": "dangling_ns", "status": "inconclusive", "reason": "pooled_registered"},
+        {"id": "L7", "rule": "dangling_ns", "status": "inconclusive", "reason": "registry_unchecked"},
+        {"id": "L8", "rule": "dangling_ns", "status": "inconclusive", "reason": "a_code_from_the_future"},
+        {"id": "P1", "rule": "email_spoofing", "status": "confirmed", "reason": "pooled_registered"},
+        {"id": "L9", "rule": "takeover", "status": "inconclusive"},
+    ])
+    lines = capsys.readouterr().out.splitlines()
+    assert lines[0].endswith("? inconclusive: Route 53, all registered: impractical to take")
+    assert lines[1].endswith("? inconclusive: the registry couldn't be checked: run it again later")
+    assert lines[2].endswith("? inconclusive")      # an unknown code adds nothing, never a guess
+    assert lines[3].endswith("✓ confirmed")         # only an inconclusive verdict gets a reason
+    assert lines[4].endswith("? inconclusive")      # no reason at all: as before
+
+
+def test_every_akashi_dangling_ns_reason_has_words():
+    from akashi import verdict
+    codes = [getattr(verdict, n) for n in ("PARENT_UNREACHABLE", "DELEGATION_ELSEWHERE", "NS_UNREGISTERED",
+                                           "REGISTRY_UNCHECKED", "POOLED_REGISTERED", "NS_REGISTERED",
+                                           "ORIGIN_SILENT")]
+    assert set(codes) <= set(vet_mod.REASON_WORDS)
