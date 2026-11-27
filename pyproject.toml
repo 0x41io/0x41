@@ -19,8 +19,8 @@ dynamic = ["version"]
 # tools aren't on PyPI, and a bare name could pull a stranger's package of the
 # same name. Akashi pins the same Monomi tag, so pip sees one Monomi.
 dependencies = [
-    "monomi @ git+https://github.com/0x41io/monomi@v1.29.3",
-    "akashi @ git+https://github.com/0x41io/akashi@v0.7.2",
+    "monomi @ git+https://github.com/0x41io/monomi@v1.29.4",
+    "akashi @ git+https://github.com/0x41io/akashi@v0.7.3",
     "kaidoku @ git+https://github.com/0x41io/kaidoku@v0.10.5",
 ]
 
