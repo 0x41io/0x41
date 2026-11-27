@@ -116,6 +116,9 @@ def main(argv=None) -> int:
             print("\n0x41: not approved. Nothing will run.", file=sys.stderr)
             return 130
     if args.command == "vet":
+        from x41 import keys
+        for line in keys.load_for_vet():  # v0.11.1: the key saved by `0x41 mcp keys` works here too
+            print(f"         {line}")
         try:
             scope_file = args.scope
             if args.program:

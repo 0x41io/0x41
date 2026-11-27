@@ -11,6 +11,14 @@ import pytest
 
 
 @pytest.fixture(autouse=True)
+def no_real_key_file(tmp_path, monkeypatch):
+    """No test reads the real ~/.config/0x41/keys.env (v0.11.1: `0x41 vet`
+    loads it): tests that want one make their own."""
+    from x41 import keys
+    monkeypatch.setattr(keys, "keys_path", lambda: str(tmp_path / "no-keys.env"))
+
+
+@pytest.fixture(autouse=True)
 def no_network(monkeypatch):
     tried = []
 

@@ -139,3 +139,44 @@ def test_the_server_loads_keys_at_start_and_prints_only_names(keyfile, monkeypat
 def test_cli_mcp_keys_runs_the_writer(monkeypatch):
     monkeypatch.setattr(keys, "write_from_env", lambda: 7)
     assert cli.main(["mcp", "keys"]) == 7
+
+
+def test_load_for_vet_loads_names_only_and_a_terminal_key_wins(keyfile):
+    path = keyfile(f"OTX_API_KEY={OTX}\nNVD_API_KEY={NVD}\n")
+    env = {"OTX_API_KEY": "from-terminal"}
+    lines = keys.load_for_vet(path, env)
+    assert env == {"OTX_API_KEY": "from-terminal", "NVD_API_KEY": NVD}
+    assert lines == [f"keys from {path}: NVD_API_KEY"]
+    assert NVD not in "".join(lines)
+
+
+def test_load_for_vet_is_quiet_with_no_file_or_nothing_new(tmp_path, keyfile):
+    assert keys.load_for_vet(str(tmp_path / "none.env"), {}) == []
+    path = keyfile(f"NVD_API_KEY={NVD}\n")
+    assert keys.load_for_vet(path, {"NVD_API_KEY": "set"}) == []   # an MCP vet: the server already loaded it
+
+
+def test_load_for_vet_refuses_a_file_others_can_read(keyfile):
+    env = {}
+    lines = keys.load_for_vet(keyfile(f"NVD_API_KEY={NVD}\n", mode=0o644), env)
+    assert env == {} and "refused" in lines[0]
+
+
+def test_vet_in_a_terminal_gets_the_saved_nvd_key(keyfile, monkeypatch, capsys):
+    path = keyfile(f"NVD_API_KEY={NVD}\n")
+    monkeypatch.setattr(keys, "keys_path", lambda: path)
+    monkeypatch.delenv("NVD_API_KEY", raising=False)
+    seen = {}
+
+    def fake_vet(domain, **kw):
+        seen["key"] = os.environ.get("NVD_API_KEY")
+        return 0
+    monkeypatch.setattr(cli.vet_mod, "vet", fake_vet)
+    monkeypatch.setattr(cli, "check_versions", lambda: True)
+    try:
+        assert cli.main(["vet", "example.test", "--no-cves"]) == 0
+    finally:
+        os.environ.pop("NVD_API_KEY", None)
+    assert seen["key"] == NVD
+    out = capsys.readouterr().out
+    assert "NVD_API_KEY" in out and NVD not in out

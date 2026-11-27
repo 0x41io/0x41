@@ -1,5 +1,5 @@
 """
-API keys for vets started from Claude.
+API keys for vets, started from Claude or from a terminal.
 
 The Claude app starts `0x41 mcp` without reading ~/.bashrc, so keys set
 there never reach the vets it starts, and mønømi's OTX source falls back to
@@ -19,6 +19,9 @@ Rules:
 
 `0x41 mcp keys` writes the file from the keys set in your terminal, so you
 never type them: it shows the names (not the values) and asks first.
+
+Since v0.11.1 `0x41 vet` in a terminal loads the same file too (load_for_vet),
+so a key saved once works everywhere; a key set in the terminal still wins.
 """
 
 import os
@@ -92,6 +95,25 @@ def load(path: str | None = None, environ=None) -> list:
     if kept:
         out.append(f"already set in the environment, kept: {', '.join(kept)}")
     return out + notes
+
+
+def load_for_vet(path: str | None = None, environ=None) -> list:
+    """`0x41 vet` (v0.11.1): the same file and rules as load(), but only says
+    something when it matters: which keys it loaded, or why the file was
+    refused. Quiet when there's no file or every key was already set (a vet
+    started over MCP already has the server's keys). Names only."""
+    path = path or keys_path()
+    environ = os.environ if environ is None else environ
+    if not os.path.lexists(path):
+        return []
+    problem = private_problem(path)
+    if problem:
+        return [f"key file refused, running without it: {problem}"]
+    keys, _ = read(path)
+    loaded = [n for n, v in keys.items() if not environ.get(n)]
+    for name in loaded:
+        environ[name] = keys[name]
+    return [f"keys from {path}: {', '.join(loaded)}"] if loaded else []
 
 
 def write_from_env(path: str | None = None, environ=None, ask=input, out=print) -> int:

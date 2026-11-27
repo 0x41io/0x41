@@ -60,6 +60,7 @@ v0.10.5 pins mønømi v1.28.0, akashi v0.6.1 and kaidoku v0.10.4: no more takeov
 
 v0.10.6 pins mønømi v1.28.1, akashi v0.7.0 and kaidoku v0.10.5: broken DNS delegations (`dangling_ns`) are proven in every vet. Akashi re-checks the zone, learns its exact nameservers from the parent zone (one DNS question), and checks whether their domains are registered; kaidoku calls them "Broken DNS delegation" with their own next step. Route 53 delegations are graded right (IPv6 nameservers, every Route 53 range), and a registry rate limit is never read as "no registration found".
 v0.11.0 pins mønømi v1.29.2 and akashi v0.7.1. **BBOT hostnames in a vet:** `0x41 vet example.com --bbot ~/.bbot/scans/NAME/output.json` gives mønømi the in-scope hostnames from a BBOT scan you ran yourself (`bbot -t example.com -p subdomain-enum -om json -n NAME`) as one more source. 0x41 never runs BBOT; mønømi reads only its DNS names under the target domain, and BBOT's other events are counted in the report, not imported. From Claude, `vet_start` takes the BBOT scan's name (`bbot="NAME"`), never a path, and that vet stays passive. Shodan InternetDB now checks every one of the target's own servers first; CDN edge IPs come after them, since their open ports belong to the CDN. The CVE line says the real NVD pace: about 50 lookups every 30 seconds with `NVD_API_KEY`, about 5 without.
+v0.11.1: `0x41 vet` in a terminal loads the keys saved by `0x41 mcp keys` (`~/.config/0x41/keys.env`, OTX and NVD only, same rules: readable only by you, names shown, never values), so a key saved once works for every vet. A key set in your terminal still wins.
 
 ## Install
 
@@ -89,7 +90,7 @@ After a pin bump, `pip install -e .` can leave an older tool installed. `0x41 ve
 0x41 vet example.com --bbot ~/.bbot/scans/NAME/output.json   # plus a BBOT scan's hostnames (v0.11.0)
 ```
 
-The scope file uses mønømi's format (in/out lines, as on a bug bounty program's page). Without an NVD API key, CVE lookups are spaced out (about 5 every 30 seconds); with `NVD_API_KEY` it's about 50, roughly 10x faster (`0x41 mcp keys` saves it for vets started from Claude).
+The scope file uses mønømi's format (in/out lines, as on a bug bounty program's page). Without an NVD API key, CVE lookups are spaced out (about 5 every 30 seconds); with `NVD_API_KEY` it's about 50, roughly 10x faster (`0x41 mcp keys` saves it once for every vet, terminal or Claude, since v0.11.1).
 
 **Where runs go:** `runs/<domain>/<time>/` in the clone (`scan.json`, `verdicts.jsonl`, `run.json`, `report.md`). A plain install uses `~/.0x41`; `X41_HOME` overrides both. Every verdict also goes into akashi's proof history, so `akashi recheck` works after you fix something.
 
