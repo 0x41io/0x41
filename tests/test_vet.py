@@ -502,3 +502,21 @@ def test_a_scan_from_before_any_of_this_adds_nothing(tmp_path):
     rec = json.loads((run_dir / "run.json").read_text())
     assert rec["set_aside"] == [] and rec["out_of_scope"] is None
     assert "## Set aside by mønømi" not in (run_dir / "report.md").read_text()
+
+
+def test_crtsh_behind_is_said_as_behind_not_failed(tmp_path):
+    # The lab: crt.sh answered 0 while Cert Spotter found certificates (mønømi's CRTSH_BEHIND)
+    why = "no certificates for this domain yet: the crt.sh database answered with 0 while Cert Spotter found 4"
+    scan = {"errors": {"crt.sh": why, "crt.sh database": why},
+            "sources": {"certspotter": {}, "otx": {}}}
+    _, run_dir = go(tmp_path, Fake(scan_json=scan))
+    cov = json.loads((run_dir / "run.json").read_text())["coverage"]
+    assert cov["word"] == "partial" and all(f["behind"] for f in cov["sources"]["failed"])
+    text = (run_dir / "report.md").read_text()
+    assert "  - crt.sh is behind: no certificates" in text and "crt.sh failed" not in text
+
+
+def test_the_summary_table_comes_before_the_coverage_section(tmp_path):
+    _, run_dir = go(tmp_path, Fake(scan_json=FAILED_SCAN), scope=scope_file(tmp_path, "*.example.test\n"))
+    text = (run_dir / "report.md").read_text()
+    assert text.index("| ID | Finding |") < text.index("## Coverage") < text.index("## Findings")

@@ -220,11 +220,13 @@ def coverage(scan_path: str, scope: str | None, domain: str, exact_count: int = 
     Every failed or cut-short source is listed with mønømi's reason. crt.sh's
     website and database hold the same data: one failing while the other
     worked leaves no gap (mønømi's own baseline_gaps decides)."""
-    from monomi.cli import SOURCE_NAMES, baseline_gaps
+    from monomi.cli import CRTSH_BEHIND, SOURCE_NAMES, baseline_gaps
     scan = _scan(scan_path)
     errors = {str(k): str(v) for k, v in (scan.get("errors") or {}).items()}
     sources = scan.get("sources") or {}
-    failed = [{"source": name, "why": why} for name, why in errors.items()]
+    # "behind": crt.sh answered but hasn't indexed the certificates yet, not broken (mønømi's words)
+    failed = [{"source": name, "why": why, **({"behind": True} if why.startswith(CRTSH_BEHIND) else {})}
+              for name, why in errors.items()]
     cut_short = [{"source": name, "why": str(sources[key]["partial"])} for name, key in SOURCE_NAMES.items()
                  if (sources.get(key) or {}).get("partial") and not sources[key].get("from_saved")]
     answered = sum(1 for name, key in SOURCE_NAMES.items() if name not in errors and key in sources)

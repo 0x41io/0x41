@@ -150,7 +150,8 @@ def _coverage(rec: dict) -> list:
     out = ["## Coverage", "", head, "",
            f"- Sources: {src.get('answered', 0)} of {src.get('total', 0)} answered "
            f"(scope: {md(cov.get('scope_kind'))})"]
-    out += [f"  - {md(f['source'])} failed: {md(f['why'])}" for f in src.get("failed") or []]
+    out += [f"  - {md(f['source'])} {'is behind' if f.get('behind') else 'failed'}: {md(f['why'])}"
+            for f in src.get("failed") or []]
     out += [f"  - {md(c['source'])} was cut short: {md(c['why'])}" for c in src.get("cut_short") or []]
     oos = rec.get("out_of_scope")
     if oos:
@@ -187,16 +188,18 @@ def markdown(rec: dict) -> str:
            "mønømi found it · akashi proved it · kaidoku explained it. Every verdict below was "
            "decided by akashi's code from the evidence shown; the explanations never change one.", "",
            "## Summary", "", f"**{tally(rec)}**", ""]
-    out += _coverage(rec)
     if leads:
         out += ["| ID | Finding | State | Fix owner |", "|---|---|---|---|"]
         out += [f"| {md(d['id'])} | {md(d['name'])} | {d['label']} | {md(d.get('owner')) or '-'} |"
                 for d in leads]
-        out += ["", "## Findings", ""]
-        for lead in leads:
-            out += _finding(lead)
+        out.append("")
     else:
         out += ["No findings to prove in this run.", ""]
+    out += _coverage(rec)   # after the summary table, so the table reads as part of the summary
+    if leads:
+        out += ["## Findings", ""]
+        for lead in leads:
+            out += _finding(lead)
 
     not_proven = rec.get("not_proven") or []
     unhandled = rec.get("unhandled") or []
