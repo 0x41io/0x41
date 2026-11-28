@@ -123,6 +123,18 @@ def markdown(rec: dict) -> str:
            "mønømi found it · akashi proved it · kaidoku explained it. Every verdict below was "
            "decided by akashi's code from the evidence shown; the explanations never change one.", "",
            "## Summary", "", f"**{tally(rec)}**", ""]
+    coverage = rec.get("scan_coverage") or {}
+    if coverage:
+        out += [f"**Coverage:** {md(coverage.get('coverage'))} · sources: "
+                f"{coverage.get('answered', 0)}/{coverage.get('total', 0)} answered", ""]
+        for failed in coverage.get("failed") or []:
+            out.append(f"- **Source failed:** {md(failed.get('source'))}: {md(failed.get('reason'))}")
+        if coverage.get("out_of_scope_count"):
+            hosts = ", ".join(md(h) for h in (coverage.get("out_of_scope_hosts") or [])[:5])
+            out.append(f"- **Out of scope:** {coverage['out_of_scope_count']} host(s)" + (f" ({hosts})" if hosts else ""))
+        for item in coverage.get("set_aside") or []:
+            out.append("- **Set aside:** " + "; ".join(f"{k}: {md(v)}" for k, v in item.items()))
+        out.append("")
     if leads:
         out += ["| ID | Finding | State | Fix owner |", "|---|---|---|---|"]
         out += [f"| {md(d['id'])} | {md(d['name'])} | {d['label']} | {md(d.get('owner')) or '-'} |"

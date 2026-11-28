@@ -246,6 +246,11 @@ def vet_summary(st: dict) -> dict:
         "job_id": st["job_id"], "domain": st["domain"], "status": "done", "started": st.get("started"),
         "tally": report.tally(rec), "versions": rec.get("versions"),
         "program": rec.get("program"), "scope_hosts_added": len(rec.get("scope_hosts") or []),
+        **({"sources": {k: rec["scan_coverage"][k] for k in ("answered", "total", "failed")},
+            "coverage": rec["scan_coverage"]["coverage"],
+            "out_of_scope_count": rec["scan_coverage"]["out_of_scope_count"],
+            "out_of_scope_hosts": rec["scan_coverage"]["out_of_scope_hosts"][:LIST_CAP],
+            "set_aside": rec["scan_coverage"]["set_aside"][:LIST_CAP]} if rec.get("scan_coverage") else {}),
         "findings": [_finding(d) for d in leads[:LIST_CAP]],
         "not_proven": [_not_proven(n) for n in not_proven[:LIST_CAP]],
         "not_provable_yet": [{"id": u.get("id"), "rule": u.get("rule")}

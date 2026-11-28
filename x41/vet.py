@@ -187,6 +187,38 @@ def left_out(scan_path: str) -> dict | None:
             "lead_hosts": [str(h) for h in built.get("more_leads_hosts") or []]}
 
 
+def scan_coverage(scan_path: str, scope: str | None) -> dict:
+    """Keep scan completeness visible in the run record."""
+    from x41.changes import source_report
+    from monomi import scope as monomi_scope
+    with open(scan_path, encoding="utf-8") as f:
+        scan = json.load(f)
+    sources = source_report(scan)
+    failed = [{"source": name, "reason": reason} for name, (state, reason) in sources.items()
+              if state == "failed"]
+    paths = (scan.get("paths") if isinstance(scan, dict) else None) or {}
+    out_scope = [str(h) for h in paths.get("out_of_scope_hosts") or []]
+    set_aside = []
+    for item in paths.get("set_aside") or []:
+        gate = item.get("gate") or {}
+        entry = {k: item.get(k) for k in ("rule", "title", "host") if item.get(k)}
+        if gate.get("why"):
+            entry["why"] = gate["why"]
+        set_aside.append(entry)
+    wildcard = False
+    if scope:
+        try:
+            loaded = monomi_scope.load(scope)
+            wildcard = any(r.wildcard for r in loaded.inclusions)
+        except OSError:
+            # Test doubles and old runs may retain only the scope name.
+            wildcard = False
+    return {"answered": len(sources) - len(failed), "total": len(sources), "failed": failed,
+            "coverage": "partial" if wildcard and failed else "clean",
+            "out_of_scope_count": len(out_scope), "out_of_scope_hosts": out_scope,
+            "set_aside": set_aside}
+
+
 def write_verdicts(path: str, target: str, verdicts: list) -> None:
     """This vet's verdicts, in akashi's own history format, so kaidoku reads
     them exactly like a proof history (one file for this vet only)."""
@@ -240,6 +272,7 @@ def vet(domain: str, *, scope: str | None = None, ai: bool = False, active: bool
         print(f"\n0x41: monomi didn't finish (exit {code}); nothing else ran.", file=sys.stderr)
         return 2
     rec["left_out"] = left_out(scan_path)
+    rec["scan_coverage"] = scan_coverage(scan_path, scope)
     if rec["left_out"]:
         print(f"         {report.left_out_line(rec['left_out'])}")
 
