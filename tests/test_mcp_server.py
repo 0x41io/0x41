@@ -492,3 +492,28 @@ def test_a_bbot_scan_linked_outside_its_folder_is_refused(homes, monkeypatch):
     monkeypatch.setattr(mcp_server, "bbot_scans_dir", lambda: str(root))
     with pytest.raises(mcp_server.ToolError, match="isn't inside"):
         mcp_server.bbot_scan_path("sneaky")
+
+
+# --- v0.12.0 (issue #4): coverage, set aside and out of scope in vet_status -------
+
+COVERAGE = {"word": "partial", "why": "hosts may be missing: crt.sh didn't answer in full", "scope_kind": "wildcard",
+            "sources": {"answered": 3, "total": 4, "failed": [{"source": "crt.sh", "why": "HTTP 502"}],
+                        "cut_short": []}}
+
+
+def test_vet_status_says_how_complete_the_scan_was(homes):
+    aside = [{"rule": "email_spoofing", "title": "Send email as example.test", "hosts": ["example.test"],
+              "why": "not in the scope file"}]
+    finished_vet(homes, {**RECORD, "coverage": COVERAGE, "set_aside": aside, "set_aside_more": 0,
+                         "out_of_scope": {"count": 147, "hosts": [f"old{n}.example.test" for n in range(147)]}})
+    out = call("vet_status", {"job_id": JOB})
+    assert out["coverage"]["word"] == "partial"
+    assert out["coverage"]["sources"]["failed"] == [{"source": "crt.sh", "why": "HTTP 502"}]
+    assert out["out_of_scope_count"] == 147 and len(out["out_of_scope_hosts"]) < 147
+    assert out["set_aside"] == aside and "set_aside_more" not in out
+
+
+def test_vet_status_for_an_older_vet_has_none_of_it(homes):
+    finished_vet(homes)
+    out = call("vet_status", {"job_id": JOB})
+    assert not {"coverage", "out_of_scope_count", "set_aside"} & set(out)

@@ -392,3 +392,113 @@ def test_every_akashi_dangling_ns_reason_has_words():
                                            "REGISTRY_UNCHECKED", "POOLED_REGISTERED", "NS_REGISTERED",
                                            "ORIGIN_SILENT")]
     assert set(codes) <= set(vet_mod.REASON_WORDS)
+
+
+# --- v0.12.0 (issue #4): coverage, set-aside items and out-of-scope hosts ----------------
+
+# Like the field runs: crt.sh down (website and database), OTX timed out and
+# fell back to a saved copy, Cert Spotter answered; mønømi's gate set one item
+# aside and left 147 hosts out of scope
+FAILED_SCAN = {
+    "errors": {"crt.sh": "HTTP 502", "crt.sh database": "timed out after 60s",
+               "AlienVault OTX": "read timed out; using the saved copy from 2026-11-20T10:00:00"},
+    "sources": {"certspotter": {"source": "certspotter", "subdomains": []},
+                "otx": {"source": "otx", "subdomains": [], "from_saved": True}},
+    "paths": {"set_aside": [{"rule": "email_spoofing", "title": "Send email as example.test",
+                             "targets": {"hosts": ["example.test"]},
+                             "why": "example.test is not in the scope file: no rule matches"}],
+              "more_set_aside": 0,
+              "out_of_scope_hosts": [f"old{n}.example.test" for n in range(147)]},
+}
+
+
+def scope_file(tmp_path, text):
+    path = tmp_path / "scope.txt"
+    path.write_text(text)
+    return str(path)
+
+
+def test_a_wildcard_scope_with_failed_sources_is_partial(tmp_path, capsys):
+    _, run_dir = go(tmp_path, Fake(scan_json=FAILED_SCAN), scope=scope_file(tmp_path, "*.example.test\n"))
+    rec = json.loads((run_dir / "run.json").read_text())
+    cov = rec["coverage"]
+    assert cov["word"] == "partial" and cov["scope_kind"] == "wildcard"
+    assert cov["why"] == "hosts may be missing: crt.sh, crt.sh database, AlienVault OTX didn't answer in full"
+    assert cov["sources"]["answered"] == 1 and cov["sources"]["total"] == 4   # Cert Spotter only
+    assert {f["source"]: f["why"] for f in cov["sources"]["failed"]}["crt.sh"] == "HTTP 502"
+    # The summary line can't say clean
+    assert "coverage partial" in report.tally(rec)
+    text = (run_dir / "report.md").read_text()
+    section = text.split("## Coverage", 1)[1].split("##", 1)[0]
+    assert "**partial**: hosts may be missing" in section
+    assert "- Sources: 1 of 4 answered (scope: wildcard)" in section
+    assert "  - AlienVault OTX failed: read timed out; using the saved copy" in section
+    assert "- Out of scope: 147 host(s)" in section and "and 137 more" in section
+    assert "coverage partial: hosts may be missing" in capsys.readouterr().out   # said during the run
+
+
+def test_without_the_coverage_check_a_failed_vet_read_as_clean(tmp_path, monkeypatch):
+    # The removal test: the summary line from the field runs, "0 confirmed · 0 unclear"
+    monkeypatch.setattr(vet_mod, "coverage", lambda *a, **kw: None)
+    _, run_dir = go(tmp_path, Fake(scan_json=FAILED_SCAN), scope=scope_file(tmp_path, "*.example.test\n"))
+    rec = json.loads((run_dir / "run.json").read_text())
+    assert "coverage" not in report.tally(rec) and "## Coverage" not in (run_dir / "report.md").read_text()
+
+
+def test_an_exact_host_scope_stays_complete_and_names_the_failures(tmp_path):
+    # The scope's hosts are checked directly whatever the sources found
+    scope = scope_file(tmp_path, "www.example.test\napi.example.test\n")
+    _, run_dir = go(tmp_path, Fake(scan_json=FAILED_SCAN), scope=scope)
+    rec = json.loads((run_dir / "run.json").read_text())
+    cov = rec["coverage"]
+    assert cov["word"] == "complete" and cov["scope_kind"] == "exact hosts"
+    assert cov["why"] == "the scope's 2 exact host(s) were checked directly; 3 source(s) didn't answer in full"
+    assert "3 source(s) didn't answer in full" in report.tally(rec)
+    assert "coverage partial" not in report.tally(rec)
+
+
+def test_crtsh_down_while_its_database_answered_leaves_no_gap(tmp_path):
+    scan = {"errors": {"crt.sh": "HTTP 502"},
+            "sources": {"crt.sh database": {"source": "crt.sh database"}, "certspotter": {}, "otx": {}}}
+    _, run_dir = go(tmp_path, Fake(scan_json=scan))
+    cov = json.loads((run_dir / "run.json").read_text())["coverage"]
+    assert cov["word"] == "complete" and cov["scope_kind"] == "whole domain"
+    assert cov["why"] == "nothing was lost; 1 source(s) didn't answer in full"
+    assert cov["sources"]["failed"] == [{"source": "crt.sh", "why": "HTTP 502"}]
+
+
+def test_a_source_cut_short_makes_a_whole_domain_scan_partial(tmp_path):
+    scan = {"errors": {}, "sources": {"crt.sh": {}, "crt.sh database": {}, "otx": {},
+                                      "certspotter": {"partial": "stopped at the 5-page cap"}}}
+    _, run_dir = go(tmp_path, Fake(scan_json=scan))
+    cov = json.loads((run_dir / "run.json").read_text())["coverage"]
+    assert cov["word"] == "partial"
+    assert cov["sources"]["cut_short"] == [{"source": "Cert Spotter", "why": "stopped at the 5-page cap"}]
+    assert "Cert Spotter was cut short: stopped at the 5-page cap" in (run_dir / "report.md").read_text()
+
+
+def test_a_full_clean_scan_stays_quiet(tmp_path, capsys):
+    scan = {"errors": {}, "sources": {"crt.sh": {}, "crt.sh database": {}, "certspotter": {}, "otx": {}}}
+    _, run_dir = go(tmp_path, Fake(scan_json=scan))
+    rec = json.loads((run_dir / "run.json").read_text())
+    assert rec["coverage"]["word"] == "complete" and rec["coverage"]["why"] is None
+    assert report.coverage_lines(rec) == [] and "coverage" not in report.tally(rec)
+    assert "**complete**" in (run_dir / "report.md").read_text()
+
+
+def test_set_aside_items_reach_the_report_with_the_gates_reason(tmp_path):
+    _, run_dir = go(tmp_path, Fake(scan_json=FAILED_SCAN), scope=scope_file(tmp_path, "*.example.test\n"))
+    rec = json.loads((run_dir / "run.json").read_text())
+    assert rec["set_aside"] == [{"rule": "email_spoofing", "title": "Send email as example.test",
+                                 "hosts": ["example.test"],
+                                 "why": "example.test is not in the scope file: no rule matches"}]
+    section = (run_dir / "report.md").read_text().split("## Set aside by mønømi", 1)[1]
+    assert ("- **email_spoofing** Send email as example.test (example.test): "
+            "example.test is not in the scope file: no rule matches") in section
+
+
+def test_a_scan_from_before_any_of_this_adds_nothing(tmp_path):
+    _, run_dir = go(tmp_path, Fake())   # scan.json is {}: no errors, sources or paths
+    rec = json.loads((run_dir / "run.json").read_text())
+    assert rec["set_aside"] == [] and rec["out_of_scope"] is None
+    assert "## Set aside by mønømi" not in (run_dir / "report.md").read_text()

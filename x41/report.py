@@ -46,6 +46,27 @@ def _left_out_count(rec: dict) -> int:
     return int(cut.get("paths") or 0) + int(cut.get("leads") or 0)
 
 
+def _names(items, most=3) -> str:
+    items = [md(i) for i in items]
+    return ", ".join(items[:most]) + (f" and {len(items) - most} more" if len(items) > most else "")
+
+
+def coverage_lines(rec: dict) -> list:
+    """A few plain lines for the terminal on how complete the scan was and what
+    mønømi set aside (v0.12.0, issue #4). Nothing when it was complete and
+    nothing was set aside: a full, clean scan stays quiet."""
+    cov, out = rec.get("coverage") or {}, []
+    if cov.get("why"):
+        out.append(f"coverage {cov['word']}: {md(cov['why'])}")
+    oos = rec.get("out_of_scope")
+    if oos:
+        out.append(f"{oos['count']} host(s) out of scope, left out of the evidence")
+    aside = len(rec.get("set_aside") or []) + int(rec.get("set_aside_more") or 0)
+    if aside:
+        out.append(f"{aside} item(s) set aside by mønømi's gate (out of scope or not the target's own)")
+    return out
+
+
 def tally(rec: dict) -> str:
     counts = {s: 0 for s in STATE_ORDER}
     for lead in rec.get("leads") or []:
@@ -55,6 +76,14 @@ def tally(rec: dict) -> str:
     left = len(rec.get("not_proven") or []) + len(rec.get("unhandled") or []) + _left_out_count(rec)
     if left:
         bits.append(f"{left} not proven (see the report)")
+    # How complete it was (v0.12.0): a partial scan never reads as clean
+    cov = rec.get("coverage") or {}
+    src = cov.get("sources") or {}
+    if cov.get("word") == "partial":
+        bits.append("coverage partial (see the report)")
+    elif src.get("failed") or src.get("cut_short"):
+        n = len(src.get("failed") or []) + len(src.get("cut_short") or [])
+        bits.append(f"{n} source(s) didn't answer in full")
     return " · ".join(bits)
 
 
@@ -110,6 +139,41 @@ def _cves(rec: dict) -> list:
     return out + [""]
 
 
+def _coverage(rec: dict) -> list:
+    """The Coverage section (v0.12.0, issue #4): sources, the coverage word
+    and why, and the hosts out of scope. Absent from runs made before it."""
+    cov = rec.get("coverage")
+    if not cov:
+        return []
+    src = cov.get("sources") or {}
+    head = f"**{cov['word']}**" + (f": {md(cov['why'])}" if cov.get("why") else "")
+    out = ["## Coverage", "", head, "",
+           f"- Sources: {src.get('answered', 0)} of {src.get('total', 0)} answered "
+           f"(scope: {md(cov.get('scope_kind'))})"]
+    out += [f"  - {md(f['source'])} failed: {md(f['why'])}" for f in src.get("failed") or []]
+    out += [f"  - {md(c['source'])} was cut short: {md(c['why'])}" for c in src.get("cut_short") or []]
+    oos = rec.get("out_of_scope")
+    if oos:
+        out.append(f"- Out of scope: {oos['count']} host(s), left out of the evidence "
+                   f"({_names(oos.get('hosts') or [], 10)})")
+    return out + [""]
+
+
+def _set_aside(rec: dict) -> list:
+    """What mønømi's gate set aside, with its reason (v0.12.0, issue #4)."""
+    items, more = rec.get("set_aside") or [], int(rec.get("set_aside_more") or 0)
+    if not items and not more:
+        return []
+    out = ["## Set aside by mønømi", "",
+           "Out of scope or not the target's own server: neither attack paths nor leads, never proven.", ""]
+    for item in items:
+        where = f" ({_names(item.get('hosts') or [])})" if item.get("hosts") else ""
+        out.append(f"- **{md(item['rule'])}** {md(item['title'])}{where}: {md(item['why'])}")
+    if more:
+        out.append(f"- and {more} more past mønømi's cap")
+    return out + [""]
+
+
 def markdown(rec: dict) -> str:
     v = rec.get("versions") or {}
     tools = " · ".join(f"{name} {v[name]}" for name in ("monomi", "akashi", "kaidoku") if v.get(name))
@@ -123,6 +187,7 @@ def markdown(rec: dict) -> str:
            "mønømi found it · akashi proved it · kaidoku explained it. Every verdict below was "
            "decided by akashi's code from the evidence shown; the explanations never change one.", "",
            "## Summary", "", f"**{tally(rec)}**", ""]
+    out += _coverage(rec)
     if leads:
         out += ["| ID | Finding | State | Fix owner |", "|---|---|---|---|"]
         out += [f"| {md(d['id'])} | {md(d['name'])} | {d['label']} | {md(d.get('owner')) or '-'} |"
@@ -147,6 +212,7 @@ def markdown(rec: dict) -> str:
                        "Re-run mønømi on those hosts (`--hosts`) to see them")
         out.append("")
 
+    out += _set_aside(rec)
     out += _cves(rec)
     out += ["## Files", "", "- `scan.json`: mønømi's scan",
             "- `verdicts.jsonl`: this run's akashi verdicts (the full proof history stays in akashi)",

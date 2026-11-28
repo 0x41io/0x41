@@ -187,6 +187,77 @@ def left_out(scan_path: str) -> dict | None:
             "lead_hosts": [str(h) for h in built.get("more_leads_hosts") or []]}
 
 
+def _scan(scan_path: str) -> dict:
+    with open(scan_path, encoding="utf-8") as f:
+        scan = json.load(f)
+    return scan if isinstance(scan, dict) else {}
+
+
+def scope_kind(scope: str | None, domain: str) -> str:
+    """How the hosts to check were chosen: "whole domain" (no scope file, or one
+    that can't be read), "wildcard" (a *. rule covers the domain's subdomains),
+    or "exact hosts" (only named hosts, which mønømi checks directly whatever
+    its sources found). Read with mønømi's own scope parser."""
+    if not scope:
+        return "whole domain"
+    from monomi import scope as monomi_scope
+    s = monomi_scope.load(scope)
+    if s.problem():
+        return "whole domain"
+    domain = domain.lower().rstrip(".")
+    if any(r.wildcard and (domain == r.domain or domain.endswith("." + r.domain)) for r in s.inclusions):
+        return "wildcard"
+    return "exact hosts"
+
+
+def coverage(scan_path: str, scope: str | None, domain: str, exact_count: int = 0) -> dict:
+    """How complete mønømi's scan was, decided by code (issue #4), so a vet
+    with no findings can't read as clean when its sources failed:
+      partial   the hosts came from discovery (whole domain or a wildcard)
+                and a source failed, was behind or was cut short: hosts may be missing
+      complete  every source answered in full, or the scope names exact hosts,
+                which mønømi checks directly whatever the sources found
+    Every failed or cut-short source is listed with mønømi's reason. crt.sh's
+    website and database hold the same data: one failing while the other
+    worked leaves no gap (mønømi's own baseline_gaps decides)."""
+    from monomi.cli import SOURCE_NAMES, baseline_gaps
+    scan = _scan(scan_path)
+    errors = {str(k): str(v) for k, v in (scan.get("errors") or {}).items()}
+    sources = scan.get("sources") or {}
+    failed = [{"source": name, "why": why} for name, why in errors.items()]
+    cut_short = [{"source": name, "why": str(sources[key]["partial"])} for name, key in SOURCE_NAMES.items()
+                 if (sources.get(key) or {}).get("partial") and not sources[key].get("from_saved")]
+    answered = sum(1 for name, key in SOURCE_NAMES.items() if name not in errors and key in sources)
+    gaps = baseline_gaps({"errors": errors, "sources": sources}) if errors else []
+    kind = scope_kind(scope, domain)
+    out = {"word": "complete", "why": None, "scope_kind": kind,
+           "sources": {"answered": answered, "total": len(SOURCE_NAMES),
+                       "failed": failed, "cut_short": cut_short}}
+    missing = gaps + [c["source"] for c in cut_short if c["source"] not in gaps]
+    if missing and kind != "exact hosts":
+        out["word"] = "partial"
+        out["why"] = f"hosts may be missing: {', '.join(missing)} didn't answer in full"
+    elif failed or cut_short:
+        n = len(failed) + len(cut_short)
+        checked = (f"the scope's {exact_count} exact host(s) were checked directly"
+                   if kind == "exact hosts" else "nothing was lost")
+        out["why"] = f"{checked}; {n} source(s) didn't answer in full"
+    return out
+
+
+def gate_results(scan_path: str) -> tuple[list, int, dict | None]:
+    """What mønømi's gate set aside and which hosts were out of scope (issue
+    #4), so a vet shows them instead of looking empty: (set aside items,
+    how many more past mønømi's cap, {"count", "hosts"} or None)."""
+    built = _scan(scan_path).get("paths") or {}
+    aside = [{"rule": str(item.get("rule") or "?"), "title": str(item.get("title") or ""),
+              "hosts": [str(h) for h in ((item.get("targets") or {}).get("hosts") or [])][:3],
+              "why": str(item.get("why") or "")}
+             for item in built.get("set_aside") or []]
+    oos = [str(h) for h in built.get("out_of_scope_hosts") or []]
+    return aside, int(built.get("more_set_aside") or 0), ({"count": len(oos), "hosts": oos} if oos else None)
+
+
 def write_verdicts(path: str, target: str, verdicts: list) -> None:
     """This vet's verdicts, in akashi's own history format, so kaidoku reads
     them exactly like a proof history (one file for this vet only)."""
@@ -219,7 +290,8 @@ def vet(domain: str, *, scope: str | None = None, ai: bool = False, active: bool
     rec = {"domain": domain, "started": now.isoformat(timespec="seconds"), "run_dir": run_dir,
            "versions": tools.versions, "scope": scope, "ai": ai,
            "verdicts": [], "not_proven": [], "unhandled": [], "leads": [], "cves": None,
-           "left_out": None, "program": program, "scope_hosts": [], "bbot": bbot_file}
+           "left_out": None, "program": program, "scope_hosts": [], "bbot": bbot_file,
+           "coverage": None, "set_aside": [], "set_aside_more": 0, "out_of_scope": None}
 
     # 1. mønømi: a passive scan, scoped when there's a scope file (v0.10.0)
     scoped = f", scoped to {program}" if program else ", scoped" if scope else ""
@@ -242,6 +314,11 @@ def vet(domain: str, *, scope: str | None = None, ai: bool = False, active: bool
     rec["left_out"] = left_out(scan_path)
     if rec["left_out"]:
         print(f"         {report.left_out_line(rec['left_out'])}")
+    # How complete the scan was, and what mønømi set aside (v0.12.0, issue #4)
+    rec["coverage"] = coverage(scan_path, scope, domain, len(rec["scope_hosts"]))
+    rec["set_aside"], rec["set_aside_more"], rec["out_of_scope"] = gate_results(scan_path)
+    for line in report.coverage_lines(rec):
+        print(f"         {line}")
 
     # 2. akashi: the plan, then every passive proof (never touches the target)
     plan = tools.plan(scan_path, scope)

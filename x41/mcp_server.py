@@ -263,6 +263,24 @@ def vet_summary(st: dict) -> dict:
                                      "lead_hosts": hosts[:LIST_CAP]}
         if len(hosts) > LIST_CAP:
             out["left_out_by_monomi"]["lead_hosts_more"] = len(hosts) - LIST_CAP
+    # How complete the scan was, and what mønømi set aside (v0.12.0, issue #4)
+    cov = rec.get("coverage")
+    if cov:
+        src = cov.get("sources") or {}
+        out["coverage"] = {"word": cov.get("word"), "why": cov.get("why"), "scope_kind": cov.get("scope_kind"),
+                           "sources": {"answered": src.get("answered"), "total": src.get("total"),
+                                       "failed": (src.get("failed") or [])[:LIST_CAP],
+                                       "cut_short": (src.get("cut_short") or [])[:LIST_CAP]}}
+    oos = rec.get("out_of_scope")
+    if oos:
+        out["out_of_scope_count"] = oos.get("count", 0)
+        out["out_of_scope_hosts"] = (oos.get("hosts") or [])[:LIST_CAP]
+    aside = rec.get("set_aside") or []
+    if aside or rec.get("set_aside_more"):
+        out["set_aside"] = aside[:LIST_CAP]
+        more = max(len(aside) - LIST_CAP, 0) + int(rec.get("set_aside_more") or 0)
+        if more:
+            out["set_aside_more"] = more
     if waiting:
         out["active_proofs_waiting"] = [_waiting(n) for n in waiting]
         out["to_run_active_proofs"] = (
@@ -294,6 +312,11 @@ def vet_status(job_id: str, detail: str = "summary") -> dict:
     CVEs mønømi saw: "cves_by_host" first (one line per server; a banner
     matching many CVEs is usually one old version string), then each CVE,
     and "cves_note": they're version-banner matches to confirm, not proof.
+    "coverage" says how complete mønømi's scan was: "partial" when hosts came
+    from discovery and a source failed or was cut short (hosts may be
+    missing), with every source's reason; never call a partial vet clean.
+    "out_of_scope_count" and "set_aside" (rule, title, hosts, the gate's why)
+    show what mønømi left out on purpose.
     detail="full" adds the whole Markdown report.
     akashi decided every verdict from evidence; explanations must not change
     one. Reads files only; sends nothing."""
